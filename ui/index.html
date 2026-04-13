@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Desktop | AI Agent Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Playfair+Display:ital,wght@0,700;1,700&family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --bg: #0B0B0D;
+            --surface: rgba(255, 255, 255, 0.03);
+            --surface-elevated: rgba(255, 255, 255, 0.06);
+            --accent: #FF6A00;
+            --accent-glow: rgba(255, 106, 0, 0.3);
+            --text-main: #FFFFFF;
+            --text-dim: #888888;
+            --border: rgba(255, 255, 255, 0.08);
+            --radius-lg: 24px;
+            --radius-md: 16px;
+            --font-serif: 'Playfair Display', serif;
+            --font-accent: 'Libre Baskerville', serif;
+            --font-sans: 'Outfit', sans-serif;
+            --transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+        html { scroll-behavior: smooth; }
+        body { font-family: var(--font-sans); background: var(--bg); color: var(--text-main); min-height: 100vh; display: flex; position: relative; overflow-x: hidden; }
+
+        /* Performance Polish: Grain & Glow */
+        body::before {
+            content: ""; position: fixed; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.02; pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            z-index: 9999;
+        }
+
+        /* Sidebar Navigation */
+        .sidebar {
+            width: 80px; background: rgba(11, 11, 13, 0.8); backdrop-filter: blur(20px); border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; align-items: center; padding: 40px 0; gap: 30px; position: fixed; height: 100vh; left: 0; top: 0; z-index: 100;
+        }
+
+        .sidebar-logo { width: 44px; height: 44px; background: linear-gradient(135deg, var(--accent), #ffae00); border-radius: 14px; display: grid; place-items: center; box-shadow: 0 0 20px var(--accent-glow); margin-bottom: 20px; cursor: pointer; transition: var(--transition); }
+        .sidebar-logo:hover { transform: scale(1.1) rotate(5deg); }
+
+        .nav-link { color: var(--text-dim); font-size: 20px; cursor: pointer; transition: var(--transition); width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; text-decoration: none; position: relative; }
+        .nav-link:hover { color: var(--text-main); background: var(--surface); }
+        .nav-link.active { color: var(--accent); background: rgba(255, 106, 0, 0.08); box-shadow: 0 0 15px rgba(255, 106, 0, 0.1); }
+        .nav-link.active::after { content: ""; position: absolute; right: -16px; width: 4px; height: 16px; background: var(--accent); border-radius: 4px; box-shadow: 0 0 10px var(--accent); }
+
+        /* Layout & Content */
+        .main-content { flex: 1; margin-left: 80px; display: flex; flex-direction: column; }
+        section { min-height: 100vh; padding: 80px; display: flex; flex-direction: column; justify-content: center; position: relative; }
+        /* Identity Soft Gate */
+        body.not-logged-in .sidebar { transform: translateX(-100%); pointer-events: none; opacity: 0; }
+        body.not-logged-in .main-content section:not(#hero) { filter: blur(30px) brightness(0.5); pointer-events: none; transform: scale(0.98); opacity: 0.5; }
+        body.not-logged-in #hero .hero-text, 
+        body.not-logged-in #hero .trust-layer { filter: blur(10px); opacity: 0.5; }
+        
+        body .sidebar, body .main-content section { transition: 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
+
+        .auth-portal {
+            position: absolute; top: 55%; left: 50%; transform: translate(-50%, -50%);
+            width: 100%; max-width: 450px; z-index: 1000; text-align: center;
+            display: none; flex-direction: column; align-items: center; gap: 24px;
+        }
+        body.not-logged-in .auth-portal { display: flex; }
+
+        .ms-login-card {
+            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(40px); padding: 40px; border-radius: 32px; width: 100%;
+            box-shadow: 0 40px 100px rgba(0,0,0,0.8), 0 0 50px rgba(0, 120, 212, 0.15);
+        }
+
+        .ms-login-btn {
+            background: #FFFFFF; color: #5E5E5E; border: 1px solid #8C8C8C;
+            padding: 12px 24px; border-radius: 4px; font-weight: 600; font-size: 15px;
+            display: flex; align-items: center; gap: 12px; cursor: pointer; transition: 0.2s;
+            width: 100%; justify-content: center; margin-top: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .ms-login-btn:hover { background: #F3F3F3; box-shadow: 0 4px 10px rgba(0,0,0,0.2); transform: translateY(-1px); }
+        .ms-logo { width: 20px; height: 20px; }
+
+        .auth-title { font-size: 28px; font-weight: 700; margin-bottom: 8px; color: white; }
+        .auth-subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 30px; line-height: 1.5; }
+
+        /* Premium Hero */
+        .hero-layout { display: flex; flex-direction: column; gap: 40px; text-align: center; max-width: 1000px; margin: 0 auto; width: 100%; position: relative; }
+        .hero-text h1 { font-family: var(--font-serif); font-size: 84px; line-height: 1; font-style: italic; margin-bottom: 24px; background: linear-gradient(180deg, #FFFFFF 0%, rgba(255,255,255,0.4) 150%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        .chat-control-wrapper { width: 100%; position: relative; z-index: 10; }
+        .chat-input-container {
+            background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 20px; padding: 10px; display: flex; align-items: center; gap: 10px;
+            transition: var(--transition); backdrop-filter: blur(20px);
+        }
+        .chat-input-container:focus-within { border-color: var(--accent); box-shadow: 0 0 40px rgba(255, 106, 0, 0.15); background: rgba(255,255,255,0.05); }
+        
+        .chat-input { flex: 1; background: transparent; border: none; padding: 15px 20px; color: white; font-family: var(--font-sans); font-size: 18px; outline: none; }
+        .chat-send-btn { width: 50px; height: 50px; background: var(--accent); border: none; border-radius: 12px; color: black; font-size: 18px; cursor: pointer; transition: var(--transition); display: grid; place-items: center; }
+        .chat-send-btn:hover { transform: scale(1.05); box-shadow: 0 0 20px var(--accent-glow); }
+
+        /* Scrolling Chat Display */
+        .chat-display {
+            margin-top: 30px; display: flex; flex-direction: column; gap: 20px; max-height: 400px; overflow-y: auto; padding: 20px; border-radius: 20px;
+            scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+        }
+        .chat-bubble { padding: 20px; border-radius: 20px; font-size: 16px; line-height: 1.6; max-width: 85%; position: relative; }
+        .chat-bubble.ai { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 4px; }
+        .chat-bubble.user { background: rgba(255, 106, 0, 0.05); border: 1px solid rgba(255, 106, 0, 0.1); border-top-right-radius: 4px; align-self: flex-end; }
+        
+        /* Agent Visuals: Typing & Metadata */
+        .typing-indicator { display: flex; gap: 4px; padding: 10px; position: absolute; bottom: -25px; left: 0; }
+        .dot { width: 4px; height: 4px; background: var(--accent); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out; }
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+        /* Cards & Micro-interactions */
+        .card { background: var(--surface); backdrop-filter: blur(20px); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 40px; transition: var(--transition); position: relative; overflow: hidden; }
+        .card:hover { border-color: rgba(255, 106, 0, 0.3); background: var(--surface-elevated); transform: translateY(-8px); box-shadow: 0 20px 40px rgba(0,0,0,0.5), 0 0 20px rgba(255, 106, 0, 0.05); }
+        .card::before { content: ""; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle, rgba(255, 106, 0, 0.05) 0%, transparent 50%); opacity: 0; transition: var(--transition); pointer-events: none; }
+        .card:hover::before { opacity: 1; }
+
+        /* Skeleton Loaders (Premium Instant Feel) */
+        .skeleton-wrapper { display: flex; flex-direction: column; gap: 15px; }
+        .skeleton { background: linear-gradient(90deg, #121214 25%, #1d1d20 50%, #121214 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 12px; }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+        /* Trust Layer Badges */
+        .trust-layer { margin-top: 20px; display: flex; gap: 10px; justify-content: center; }
+        .badge-trust { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); background: rgba(255,255,255,0.03); border: 1px solid var(--border); padding: 6px 12px; border-radius: 99px; }
+        .badge-trust i { color: #32D74B; }
+
+        /* Status UI for Connectors */
+        .conn-stats { margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .stat-box { background: rgba(0,0,0,0.2); border: 1px solid var(--border); padding: 12px; border-radius: 12px; text-align: center; }
+        .stat-box span { display: block; font-size: 10px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px; }
+        .stat-box strong { font-size: 16px; color: white; }
+
+        /* Intelligence Buttons */
+        .intel-actions { display: flex; gap: 10px; margin-top: 25px; }
+        .intel-btn { flex: 1; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: white; cursor: pointer; transition: var(--transition); font-size: 13px; font-weight: 600; }
+        .intel-btn:hover { background: var(--accent); color: black; border-color: var(--accent); box-shadow: 0 0 15px var(--accent-glow); }
+        .intel-btn i { margin-right: 6px; }
+
+        .small-btn { padding: 6px 12px; font-size: 11px; border-radius: 8px; width: auto; flex: none; }
+
+        /* Hidden Utility */
+        .hidden { display: none !important; }
+
+        /* Explorer Table Styles */
+        .explorer-container { margin-top: 30px; }
+        .explorer-search { margin-bottom: 25px; position: relative; }
+        .explorer-search i { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: var(--accent); }
+        .explorer-search input { width: 100%; background: var(--surface); border: 1px solid var(--border); padding: 15px 15px 15px 50px; border-radius: 12px; color: white; outline: none; transition: var(--transition); }
+        .explorer-search input:focus { border-color: var(--accent); }
+
+        .explorer-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .explorer-table th { text-align: left; padding: 15px; color: var(--text-dim); border-bottom: 1px solid var(--border); text-transform: uppercase; font-size: 11px; letter-spacing: 0.1em; }
+        .explorer-table td { padding: 15px; border-bottom: 1px solid var(--border); color: #BBB; }
+        .explorer-table tr:hover td { background: rgba(255,255,255,0.02); color: white; cursor: pointer; }
+
+        .pagination { display: flex; justify-content: center; gap: 10px; margin-top: 30px; align-items: center; }
+        .page-btn { padding: 8px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: white; cursor: pointer; transition: var(--transition); }
+        .page-btn:hover:not(:disabled) { background: var(--accent); color: black; }
+        .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+        /* Markdown Styles */
+        .ai-content h3 { font-family: var(--font-serif); margin: 20px 0 10px; color: white; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+        .ai-content p { margin-bottom: 15px; }
+        .ai-content ul, .ai-content ol { margin-bottom: 15px; padding-left: 20px; }
+        .ai-content li { margin-bottom: 8px; }
+        .ai-content strong { color: white; font-weight: 700; }
+        .ai-content pre { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 10px; overflow-x: auto; margin-bottom: 15px; }
+    </style>
+</head>
+<body class="not-logged-in">
+    <nav class="sidebar">
+        <div class="sidebar-logo" onclick="window.scrollTo({top: 0, behavior: 'smooth'})"><i class="fa-solid fa-bolt"></i></div>
+        <a href="#hero" class="nav-link active" title="Dashboard"><i class="fa-solid fa-rocket"></i></a>
+        <a href="#explorer" class="nav-link" title="Explorer"><i class="fa-solid fa-compass"></i></a>
+        <a href="#preview" class="nav-link" title="Analysis"><i class="fa-solid fa-eye"></i></a>
+        <a href="#connectors" class="nav-link" title="Connectors"><i class="fa-solid fa-link"></i></a>
+        <a href="#settings" class="nav-link" style="margin-top: auto;" title="Settings"><i class="fa-solid fa-sliders"></i></a>
+    </nav>
+
+    <div class="main-content">
+        <!-- Hero: The Control Center -->
+        <section id="hero">
+            <div class="hero-layout" data-aos="fade-up">
+                <div class="hero-text">
+                    <h1>Nexus Server</h1>
+                    <p style="margin: 0 auto 40px;">Professional AI Agent workspace for instant enterprise document intelligence.</p>
+                </div>
+                
+                <div class="auth-portal">
+                    <div class="ms-login-card">
+                        <div class="auth-title">Welcome to Nexus</div>
+                        <div class="auth-subtitle">Sign in with your organization's Microsoft account to unlock enterprise document intelligence.</div>
+                        <button class="ms-login-btn" onclick="onMicrosoftLogin()">
+                            <svg class="ms-logo" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg"><path d="m0 0h10v10h-10z" fill="#f25022"/><path d="m11 0h10v10h-10z" fill="#7fba00"/><path d="m0 11h10v10h-10z" fill="#00a4ef"/><path d="m11 11h10v10h-10z" fill="#ffb900"/></svg>
+                            Sign in with Microsoft
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Identity Status Badge -->
+
+                <!-- Authenticated Dashboard is clean: Only header + Identity Status -->
+                
+                <div class="trust-layer">
+                    <div class="badge-trust"><i class="fa-solid fa-shield-halved"></i> Identity Verified</div>
+                    <div class="badge-trust"><i class="fa-solid fa-lock"></i> AES-256 Indexed</div>
+                    <div class="badge-trust"><i class="fa-solid fa-bolt"></i> M365 Synced</div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- Nexus Explorer: Enterprise Data Grid -->
+        <section id="explorer">
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 40px;">
+                <div>
+                    <h4 style="color: var(--accent); letter-spacing: 0.2em; font-size: 14px; margin-bottom: 10px;">ENTERPRISE DISCOVERY</h4>
+                    <h3 style="font-family: var(--font-accent); font-size: 40px;">Nexus Explorer</h3>
+                </div>
+                <button class="intel-btn small-btn" onclick="loadExplorerData(true)"><i class="fa-solid fa-rotate"></i> Refresh View</button>
+            </div>
+
+            <div class="card explorer-container">
+                <div class="explorer-search">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="explorer-search-input" placeholder="Query normalized nexus data (records, files, list items)...">
+                </div>
+
+                <div style="overflow-x: auto;">
+                    <table class="explorer-table">
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th>Title</th>
+                                <th>Category</th>
+                                <th>Insight Summary</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="explorer-tbody">
+                            <tr>
+                                <td colspan="5" style="text-align: center; padding: 40px; color: var(--text-dim);">
+                                    Initial discovery required. Start a deep sync below.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination">
+                    <button class="page-btn" id="prev-page" disabled><i class="fa-solid fa-chevron-left"></i></button>
+                    <span id="page-info" style="font-size: 13px; color: var(--text-dim);">Page 1</span>
+                    <button class="page-btn" id="next-page" onclick="changePage(1)"><i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Preview Section: WOW Insights -->
+        <section id="preview">
+            <div style="margin-bottom: 40px;">
+                <h4 style="color: var(--accent); letter-spacing: 0.2em; font-size: 14px; margin-bottom: 10px;">COGNITIVE ANALYSIS</h4>
+                <h3 style="font-family: var(--font-accent); font-size: 40px;">Insight Preview</h3>
+            </div>
+
+            <div class="grid-2">
+                <div class="card" style="padding: 30px;">
+                    <h3 id="preview-title" style="font-size: 24px; margin-bottom: 16px;">System Ready.</h3>
+                    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                        <div class="badge-trust" style="font-size: 10px;">Relevance: <span id="relevance-val">0%</span></div>
+                        <div class="badge-trust" id="source-badge">Standby</div>
+                    </div>
+                    
+                    <div class="intel-actions">
+                        <button class="intel-btn" onclick="agentAction('quick')"><i class="fa-solid fa-bolt"></i> Quick Summary</button>
+                        <button class="intel-btn" onclick="agentAction('deep')"><i class="fa-solid fa-brain"></i> Deep Analysis</button>
+                    </div>
+                    <button class="intel-btn" style="width: 100%; margin-top: 10px; background: rgba(255,106,0,0.1); color: var(--accent);" onclick="agentAction('anomalies')">
+                        <i class="fa-solid fa-chart-line"></i> Detect Anomalies
+                    </button>
+                </div>
+
+                <div class="card" id="insight-body-card">
+                    <div id="insight-skeleton" class="skeleton-wrapper hidden">
+                        <div class="skeleton" style="height: 20px; width: 60%;"></div>
+                        <div class="skeleton" style="height: 80px;"></div>
+                        <div class="skeleton" style="height: 40px; width: 40%;"></div>
+                    </div>
+                    <div id="preview-body" style="font-size: 15px; line-height: 1.8; color: #BBB;">
+                        Select a document from the surface to generate high-level intelligence and metric extraction.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Connectors Section: Alive & Syncing -->
+        <section id="connectors">
+            <div style="margin-bottom: 40px;">
+                <h4 style="color: var(--accent); letter-spacing: 0.2em; font-size: 14px; margin-bottom: 10px;">ECOSYSTEM</h4>
+                <h3 style="font-family: var(--font-accent); font-size: 40px;">Data Connectors</h3>
+            </div>
+
+            <div class="connectors-grid">
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <i class="fa-brands fa-microsoft" style="font-size: 32px; color: #00A4EF;"></i>
+                        <div class="badge-trust" id="sp-status">Disconnected</div>
+                    </div>
+                    <h3 style="margin: 15px 0 5px;">SharePoint</h3>
+                    <p style="font-size: 13px; color: var(--text-dim);">Live indexing for document libraries.</p>
+                    
+                    <div class="conn-stats">
+                        <div class="stat-box"><span>Docs</span><strong id="sp-count">0</strong></div>
+                        <div class="stat-box"><span>Sync</span><strong id="sp-time">-</strong></div>
+                    </div>
+                    <input id="sp-url" class="glass-input" style="margin-top: 20px; padding: 12px; font-size: 14px;" placeholder="Site URL">
+                    <button class="intel-btn" style="width: 100%; margin-top: 15px;" onclick="startDeepDiscovery('sharepoint')">Start Discovery</button>
+                </div>
+
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <i class="fa-solid fa-database" style="font-size: 32px; color: #742774;"></i>
+                        <div class="badge-trust" id="dv-status">Disconnected</div>
+                    </div>
+                    <h3 style="margin: 15px 0 5px;">Dataverse</h3>
+                    <p style="font-size: 13px; color: var(--text-dim);">Real-time Power Platform entities.</p>
+                    
+                    <div class="conn-stats">
+                        <div class="stat-box"><span>Records</span><strong id="dv-count">0</strong></div>
+                        <div class="stat-box"><span>Sync</span><strong id="dv-time">-</strong></div>
+                    </div>
+                    <input id="dv-url" class="glass-input" style="margin-top: 20px; padding: 12px; font-size: 14px;" placeholder="Instance URL">
+                    <button class="intel-btn" style="width: 100%; margin-top: 15px;" onclick="startDeepDiscovery('dataverse')">Start Discovery</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Settings Section -->
+        <section id="settings">
+            <div class="connectors-grid">
+                <div class="card">
+                    <h2>Infrastructure</h2>
+                    <p style="font-size: 13px; color: var(--text-dim); margin-bottom: 20px;">Local node orchestration and agent control.</p>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="intel-btn" style="background: var(--accent); color: black;" onclick="invoke('start_mcp_server')">Start Node</button>
+                        <button class="intel-btn" onclick="invoke('stop_mcp_server')">Shutdown</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>Memory & Identity</h2>
+                    <button class="intel-btn" style="width: 100%;" onclick="clearMemory()"><i class="fa-solid fa-trash"></i> Wipe Memory Database</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aos/2.3.4/aos.js"></script>
+    <script>
+        const invoke = window.__TAURI__?.invoke;
+        const listen = window.__TAURI__?.event?.listen;
+
+        // Initialize AOS
+        AOS.init({ duration: 800, easing: 'ease-out-cubic', once: true });
+
+        // --- AGENTIC CHAT LOOP ---
+        let currentAIResponse = "";
+        let activeDiscoveryItem = null;
+
+        async function sendChatMessage() {
+            const input = document.getElementById('main-chat-input');
+            const chatDisplay = document.getElementById('chat-display');
+            const message = input.value.trim();
+            if (!message) return;
+
+            // UI: Add User Message
+            const userDiv = document.createElement('div');
+            userDiv.className = 'chat-bubble user';
+            userDiv.textContent = message;
+            chatDisplay.appendChild(userDiv);
+            input.value = "";
+
+            // UI: Add AI Placeholder with Typing Animation
+            const aiDiv = document.createElement('div');
+            aiDiv.className = 'chat-bubble ai';
+            aiDiv.innerHTML = `<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
+            chatDisplay.appendChild(aiDiv);
+            chatDisplay.scrollTop = chatDisplay.scrollHeight;
+
+            currentAIResponse = "";
+            
+            try {
+                // Call Tauri Backend
+                chatStreams.set('main-chat-last', "");
+                const response = await invoke('chat_message', { message });
+                aiDiv.classList.add('ai-content');
+                aiDiv.innerHTML = marked.parse(response.reply);
+            } catch (err) {
+                aiDiv.innerHTML = `<span style="color: #FF453A">Handshake error: ${err}</span>`;
+            }
+            chatDisplay.scrollTop = chatDisplay.scrollHeight;
+        }
+
+        // --- STREAMING HANDLER ---
+        let chatStreams = new Map(); // Store full text for streaming blocks
+
+        listen('chat-chunk', (event) => {
+            // Priority 1: Update the AI Analysis panel if it's currently streaming
+            const previewBody = document.getElementById('preview-body');
+            const lastAIResult = previewBody.querySelector('.ai-live-result');
+            
+            if (lastAIResult && lastAIResult.classList.contains('streaming')) {
+                const streamId = 'preview-analysis';
+                let currentText = chatStreams.get(streamId) || "";
+                
+                // Clear "Nexus Thinking..." on first real chunk
+                if (lastAIResult.innerHTML.includes('Nexus Thinking')) {
+                    lastAIResult.innerHTML = '';
+                    lastAIResult.classList.add('ai-content');
+                }
+                
+                currentText += event.payload;
+                chatStreams.set(streamId, currentText);
+                lastAIResult.innerHTML = marked.parse(currentText);
+                return; 
+            }
+
+            // Priority 2: Update the main dashboard chat display
+            const chatDisplay = document.getElementById('chat-display');
+            const lastAI = chatDisplay.querySelector('.chat-bubble.ai:last-child');
+            if (lastAI) {
+                const streamId = 'main-chat-last';
+                let currentText = chatStreams.get(streamId) || "";
+
+                // Clear typing indicator on first chunk
+                if (lastAI.querySelector('.typing-indicator')) {
+                    lastAI.innerHTML = "";
+                    lastAI.classList.add('ai-content');
+                }
+                
+                currentText += event.payload;
+                chatStreams.set(streamId, currentText);
+                lastAI.innerHTML = marked.parse(currentText);
+                chatDisplay.scrollTop = chatDisplay.scrollHeight;
+            }
+        });
+
+        // --- PERFORMANCE: SKELETONS & DISCOVERY ---
+        async function performSearch(query) {
+            const skel = document.getElementById('results-skeleton');
+            const list = document.getElementById('results-list');
+            
+            skel.classList.remove('hidden');
+            list.classList.add('hidden');
+            
+            document.querySelector('#intelligence').scrollIntoView({ behavior: 'smooth' });
+
+            try {
+                const results = await invoke('search_documents', { query, topK: 5 });
+                renderResults(results);
+            } catch (error) {
+                renderError(error);
+            } finally {
+                skel.classList.add('hidden');
+                list.classList.remove('hidden');
+            }
+        }
+
+        function renderResults(results) {
+            const container = document.getElementById('results-list');
+            container.innerHTML = '';
+            results.forEach(res => {
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.innerHTML = `
+                    <div style="display:flex; justify-content:space-between;">
+                        <h4>${res.source.split('/').pop()}</h4>
+                        <span style="font-size:11px; color:var(--accent)">MATCH ${Math.round(res.similarity * 100)}%</span>
+                    </div>
+                    <p style="margin-top:10px; font-size:14px; color:var(--text-dim)">${res.content.slice(0, 150)}...</p>
+                `;
+                item.onclick = () => selectDoc(res);
+                container.appendChild(item);
+            });
+        }
+
+        function selectDoc(doc) {
+            document.getElementById('preview-title').textContent = doc.source.split('/').pop();
+            document.getElementById('relevance-val').textContent = Math.round(doc.similarity * 100) + "%";
+            document.getElementById('source-badge').textContent = doc.source.includes('SharePoint') ? 'SharePoint' : 'Local Node';
+            document.getElementById('preview-body').innerHTML = `<p>${doc.content}</p>`;
+            document.querySelector('#preview').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // --- WOW FACTOR: SMART INSIGHTS ---
+        async function agentAction(mode) {
+            if (!activeDiscoveryItem) {
+                alert("Please select an item from the Nexus Explorer first.");
+                return;
+            }
+
+            const skel = document.getElementById('insight-skeleton');
+            const previewBody = document.getElementById('preview-body');
+
+            skel.classList.remove('hidden');
+            
+            try {
+                // Prepare a placeholder for the live streaming text
+                const liveResult = document.createElement('div');
+                liveResult.className = 'ai-live-result streaming';
+                liveResult.innerHTML = `<i class="fa-solid fa-sparkles fa-beat" style="color:var(--accent)"></i> Nexus Thinking...`;
+                
+                // Reset stream for this action
+                chatStreams.set('preview-analysis', "");
+                
+                // Keep the original metadata/summary but prepend the AI result
+                const originalContent = previewBody.innerHTML;
+                previewBody.prepend(liveResult);
+
+                const response = await invoke('analyze_enterprise_item', {
+                    itemTitle: activeDiscoveryItem.title,
+                    itemSummary: activeDiscoveryItem.summary,
+                    metadataJson: activeDiscoveryItem.metadata,
+                    mode: mode
+                });
+                
+                // Final update if needed
+                liveResult.classList.add('ai-content');
+                liveResult.innerHTML = marked.parse(response);
+                liveResult.classList.remove('streaming');
+            } catch (err) {
+                console.error("Analysis error:", err);
+                alert(`Analysis failed: ${err}`);
+            } finally {
+                skel.classList.add('hidden');
+            }
+        }
+
+        // --- CONNECTORS & MEMORY ---
+        async function connectSource(type) {
+            const status = document.getElementById(`${type}-status`);
+            status.innerHTML = `<i class="fa-solid fa-sync fa-spin"></i> Syncing...`;
+            
+            setTimeout(() => {
+                status.textContent = "Live Connected";
+                status.style.color = "#32D74B";
+                document.getElementById(`${type}-count`).textContent = type === 'sp' ? "1,248" : "4,892";
+                document.getElementById(`${type}-time`).textContent = "Just Now";
+            }, 1500);
+        }
+
+        function clearMemory() {
+            if(confirm("Wipe local intelligence memory? This cannot be undone.")) {
+                alert("Memory purged. System reset to Zero-Context.");
+            }
+        }
+
+        // --- NEXUS EXPLORER LOGIC ---
+        let currentExplorerPage = 1;
+        const explorerLimit = 10;
+
+        async function startDeepDiscovery(source) {
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            const urlInput = document.getElementById(source === 'sharepoint' ? 'sp-url' : 'dv-url');
+            const url = urlInput.value.trim();
+
+            btn.innerHTML = `<i class="fa-solid fa-sync fa-spin"></i> Nexus Normalizing...`;
+            btn.disabled = true;
+
+            try {
+                const response = await invoke('start_discovery', { sourceType: source, url: url });
+                console.log(response);
+                
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    loadExplorerData(true);
+                    document.querySelector('#explorer').scrollIntoView({ behavior: 'smooth' });
+                }, 3000);
+            } catch (err) {
+                alert(`Discovery failed: ${err}`);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        async function loadExplorerData(reset = false) {
+            if (reset) currentExplorerPage = 1;
+            
+            try {
+                const data = await invoke('get_discovery_data', { page: currentExplorerPage, limit: explorerLimit });
+                renderExplorer(data);
+                updatePagination(data.length);
+            } catch (err) {
+                console.error("Explorer error:", err);
+            }
+        }
+
+        function renderExplorer(items) {
+            const tbody = document.getElementById('explorer-tbody');
+            if (items.length === 0) {
+                if (currentExplorerPage === 1) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px;">No items found. Run discovery to populate.</td></tr>';
+                }
+                return;
+            }
+
+            tbody.innerHTML = items.map(item => `
+                <tr onclick='selectExplorerItem(${JSON.stringify(item).replace(/'/g, "&apos;")})'>
+                    <td style="color:var(--accent); font-weight:bold;">${item.source_type}</td>
+                    <td style="color:white;">${item.title}</td>
+                    <td><span class="badge-trust">${item.category}</span></td>
+                    <td style="max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.summary}</td>
+                    <td style="font-size:12px;">${item.timestamp.split(' ')[0]}</td>
+                </tr>
+            `).join('');
+        }
+
+        function selectExplorerItem(item) {
+            activeDiscoveryItem = item;
+            // Populate the Preview section with the explorer item
+            document.getElementById('preview-title').textContent = item.title;
+            document.getElementById('relevance-val').textContent = "100%";
+            document.getElementById('source-badge').textContent = item.source_type;
+            document.getElementById('preview-body').innerHTML = `
+                <div style="margin-bottom:20px;">
+                    <h4 style="color:var(--accent); margin-bottom:10px;">AI Insight Summary</h4>
+                    <p style="font-size:15px; line-height:1.6;">${item.summary}</p>
+                </div>
+                <div style="background:rgba(255,255,255,0.02); padding:15px; border-radius:12px;">
+                    <h4 style="margin-bottom:10px; font-size:14px;">Metadata Object</h4>
+                    <pre style="font-size:11px; color:var(--text-dim); overflow-x:auto;">${JSON.stringify(JSON.parse(item.metadata), null, 2)}</pre>
+                </div>
+            `;
+            document.querySelector('#preview').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function updatePagination(itemsOnPage) {
+            document.getElementById('page-info').textContent = `Page ${currentExplorerPage}`;
+            document.getElementById('prev-page').disabled = currentExplorerPage === 1;
+            document.getElementById('next-page').disabled = itemsOnPage < explorerLimit;
+        }
+
+        function changePage(delta) {
+            currentExplorerPage += delta;
+            loadExplorerData();
+        }
+
+        document.getElementById('explorer-search-input').addEventListener('input', async (e) => {
+            const query = e.target.value.trim();
+            if (query.length < 2) {
+                if (query.length === 0) loadExplorerData(true);
+                return;
+            }
+
+            try {
+                const data = await invoke('search_discovery', { query });
+                renderExplorer(data);
+                document.getElementById('next-page').disabled = true;
+                document.getElementById('prev-page').disabled = true;
+            } catch (err) {
+                console.error("Search error:", err);
+            }
+        });
+
+        // Initialize explorer on load
+        // loadExplorerData(); // Removed redundant call
+
+        async function onMicrosoftLogin() {
+            const btn = document.querySelector('.ms-login-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Authenticating...`;
+            btn.disabled = true;
+
+            // Simulate Auth Transition
+            setTimeout(() => {
+                document.body.classList.remove('not-logged-in');
+                // Trigger celebratory pulse on hero title
+                const title = document.querySelector('.hero-text h1');
+                title.style.animation = 'glow-pulse 1s ease-out';
+                
+                console.log("Identity established. Nexus unlocked.");
+            }, 1500);
+        }
+
+        // Initialize state
+        window.addEventListener('load', () => {
+            // Ensure section-not-hero are locked
+            loadExplorerData();
+        });
+
+        // Sidebar link tracking
+        window.addEventListener('scroll', () => {
+            const sections = document.querySelectorAll('section');
+            const links = document.querySelectorAll('.nav-link');
+            let current = "";
+            sections.forEach(s => { if(pageYOffset >= s.offsetTop - 120) current = s.getAttribute('id'); });
+            links.forEach(l => {
+                l.classList.remove('active');
+                if(l.getAttribute('href') === `#${current}`) l.classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>

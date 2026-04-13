@@ -1,0 +1,345 @@
+import { Button, LineEdit, ScrollView, ListView, VerticalBox, HorizontalBox, TabWidget, GridBox } from "std-widgets.slint";
+
+// Data types must be defined before use
+export struct SearchResult {
+    content: string,
+    source: string,
+    similarity: float,
+}
+
+export struct ChatMessage {
+    id: string,
+    role: string,
+    content: string,
+    timestamp: int,
+}
+
+export struct SharePointFile {
+    name: string,
+    url: string,
+    size: int,
+    last_modified: string,
+}
+
+export struct DataverseRecord {
+    id: string,
+    fields: string,
+}
+
+export component MainWindow inherits Window {
+    title: "MCP Desktop AI Workspace";
+    width: 1200px;
+    height: 800px;
+    icon: @image-url("icon.png");
+
+    // Main layout with tabs
+    TabWidget {
+        Tab {
+            title: "Search & Chat";
+
+            VerticalBox {
+                // Search bar
+                HorizontalBox {
+                    Text { text: "Search:"; }
+                    LineEdit {
+                        placeholder-text: "Enter your search query...";
+                        text <=> search-query;
+                    }
+                    Button {
+                        text: "Search";
+                        clicked => { search_documents() }
+                    }
+                }
+
+                // Results area
+                ScrollView {
+                    min-height: 200px;
+
+                    ListView {
+                        for result in search-results: Rectangle {
+                            height: 80px;
+                            border-radius: 4px;
+                            border-width: 1px;
+                            border-color: #ddd;
+
+                            VerticalBox {
+                                padding: 8px;
+                                Text {
+                                    text: result.content;
+                                    font-size: 12px;
+                                    max-height: 40px;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: "Source: " + result.source + " | Similarity: " + result.similarity;
+                                    font-size: 10px;
+                                    color: #666;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Chat area
+                Rectangle {
+                    border-width: 1px;
+                    border-color: #ccc;
+                    min-height: 300px;
+
+                    VerticalBox {
+                        // Chat messages
+                        ScrollView {
+                            min-height: 250px;
+
+                            ListView {
+                                for message in chat-messages: Rectangle {
+                                    background: message.role == "user" ? #e3f2fd : #f5f5f5;
+                                    border-radius: 8px;
+                                    // Removed invalid margin property
+
+                                    Text {
+                                        text: message.content;
+                                        padding: 8px;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Chat input
+                        HorizontalBox {
+                            LineEdit {
+                                placeholder-text: "Type your message...";
+                                text <=> chat-input;
+                                min-width: 400px;
+                            }
+                            Button {
+                                text: "Send";
+                                clicked => { send_chat_message() }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Tab {
+            title: "Connectors";
+
+            VerticalBox {
+                // SharePoint connector
+                Rectangle {
+                    border-width: 1px;
+                    border-color: #ccc;
+                    border-radius: 4px;
+                    padding: 16px;
+                    // Removed invalid margin
+
+                    VerticalBox {
+                        Text { text: "SharePoint Connector"; font-weight: 700; font-size: 16px; }
+                        Text { text: "Status: " + (sharepoint-connected ? "Connected" : "Disconnected"); color: sharepoint-connected ? green : red; }
+
+                        HorizontalBox {
+                            LineEdit {
+                                placeholder-text: "Site URL";
+                                text <=> sharepoint-site-url;
+                                enabled: !sharepoint-connected;
+                            }
+                            Button {
+                                text: sharepoint-connected ? "Disconnect" : "Connect";
+                                clicked => { toggle_sharepoint_connection() }
+                            }
+                        }
+
+                        // File browser
+                        if sharepoint-connected: ScrollView {
+                            min-height: 200px;
+
+                            ListView {
+                                for file in sharepoint-files: Rectangle {
+                                    height: 40px;
+                                    border-radius: 4px;
+                                    border-width: 1px;
+                                    border-color: #eee;
+
+                                    HorizontalBox {
+                                        padding: 8px;
+                                        Text { text: file.name; }
+                                        Text { text: file.size + " bytes"; font-size: 10px; color: #666; }
+                                        Button { text: "Open"; clicked => { open_sharepoint_file(file) } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Dataverse connector
+                Rectangle {
+                    border-width: 1px;
+                    border-color: #ccc;
+                    border-radius: 4px;
+                    padding: 16px;
+                    // Removed invalid margin
+
+                    VerticalBox {
+                        Text { text: "Dataverse Connector"; font-weight: 700; font-size: 16px; }
+                        Text { text: "Status: " + (dataverse-connected ? "Connected" : "Disconnected"); color: dataverse-connected ? green : red; }
+
+                        HorizontalBox {
+                            LineEdit {
+                                placeholder-text: "Base URL";
+                                text <=> dataverse-base-url;
+                                enabled: !dataverse-connected;
+                            }
+                            Button {
+                                text: dataverse-connected ? "Disconnect" : "Connect";
+                                clicked => { toggle_dataverse_connection() }
+                            }
+                        }
+
+                        // Table browser
+                        if dataverse-connected: ScrollView {
+                            min-height: 200px;
+
+                            ListView {
+                                for record in dataverse-records: Rectangle {
+                                    height: 60px;
+                                    border-radius: 4px;
+                                    border-width: 1px;
+                                    border-color: #eee;
+
+                                    VerticalBox {
+                                        padding: 8px;
+                                        Text { text: "ID: " + record.id; font-weight: 700; }
+                                        Text { text: record.fields; font-size: 10px; max-height: 30px; overflow: elide; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Tab {
+            title: "Settings";
+
+            VerticalBox {
+                padding: 16px;
+
+                Text { text: "MCP Server Settings"; font-weight: 700; font-size: 16px; }
+
+                GridBox {
+                    Row {
+                        Text { text: "Server Port:"; }
+                        LineEdit { text: server-port; input-type: number; }
+                    }
+                    Row {
+                        Text { text: "Max Chunk Size:"; }
+                        LineEdit { text: max-chunk-size; input-type: number; }
+                    }
+                    Row {
+                        Text { text: "Vector DB Path:"; }
+                        LineEdit { text: vector-db-path; }
+                    }
+                }
+
+                HorizontalBox {
+                    Button { text: "Start Server"; clicked => { start_server() } }
+                    Button { text: "Stop Server"; clicked => { stop_server() } }
+                    Text { text: "Status: " + server-status; /* Removed invalid margin-left */ }
+                }
+
+                Rectangle { height: 20px; } // Spacer
+
+                Text { text: "Authentication"; font-weight: 700; font-size: 16px; }
+
+                VerticalBox {
+                    Rectangle {
+                        border-width: 1px;
+                        border-color: #ccc;
+                        border-radius: 4px;
+                        padding: 8px;
+
+                        VerticalBox {
+                            Text { text: "SharePoint OAuth"; }
+                            HorizontalBox {
+                                LineEdit { placeholder-text: "Tenant ID"; text <=> tenant-id; }
+                                LineEdit { placeholder-text: "Client ID"; text <=> client-id; }
+                                Button { text: "Authenticate"; clicked => { authenticate_sharepoint() } }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        border-width: 1px;
+                        border-color: #ccc;
+                        border-radius: 4px;
+                        padding: 8px;
+
+                        VerticalBox {
+                            Text { text: "Dataverse OAuth"; }
+                            HorizontalBox {
+                                LineEdit { placeholder-text: "Tenant ID"; text <=> dataverse-tenant-id; }
+                                LineEdit { placeholder-text: "Client ID"; text <=> dataverse-client-id; }
+                                Button { text: "Authenticate"; clicked => { authenticate_dataverse() } }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        border-width: 1px;
+                        border-color: #ccc;
+                        border-radius: 4px;
+                        padding: 8px;
+
+                        VerticalBox {
+                            Text { text: "Claude API"; }
+                            HorizontalBox {
+                                LineEdit { placeholder-text: "API Key"; text <=> claude-api-key; }
+                                Button { text: "Save"; clicked => { save_claude_key() } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Properties
+    in-out property <string> search-query;
+    in-out property <string> chat-input;
+    in-out property <string> server-port: "3721";
+    in-out property <string> max-chunk-size: "1000";
+    in-out property <string> vector-db-path: "data/vectors.db";
+    in-out property <string> tenant-id;
+    in-out property <string> client-id;
+    in-out property <string> dataverse-tenant-id;
+    in-out property <string> dataverse-client-id;
+    in-out property <string> claude-api-key;
+    in-out property <string> sharepoint-site-url;
+    in-out property <string> dataverse-base-url;
+    in-out property <string> server-status: "Stopped";
+
+    in property <bool> sharepoint-connected: false;
+    in property <bool> dataverse-connected: false;
+
+    // Data models
+    in-out property <[SearchResult]> search-results;
+    in-out property <[ChatMessage]> chat-messages;
+    in-out property <[SharePointFile]> sharepoint-files;
+    in-out property <[DataverseRecord]> dataverse-records;
+
+    // Callbacks to Rust backend
+    callback search_documents();
+    callback send_chat_message();
+    callback start_server();
+    callback stop_server();
+    callback toggle_sharepoint_connection();
+    callback toggle_dataverse_connection();
+    callback authenticate_sharepoint();
+    callback authenticate_dataverse();
+    callback save_claude_key();
+    callback open_sharepoint_file(SharePointFile);
+}

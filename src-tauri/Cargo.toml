@@ -1,0 +1,26 @@
+[package]
+name = "mcp-desktop"
+version = "0.1.0"
+description = "MCP Desktop AI Workspace"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "1", features = [ "os-all", "fs-all", "dialog-confirm", "dialog-ask", "dialog-message", "dialog-save", "path-all", "dialog-open", "http-all", "shell-open"] }
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+reqwest = { version = "0.11", features = ["json"] }
+anyhow = "1.0"
+urlencoding = "2.1"
+rusqlite = { version = "0.29", features = ["bundled"] }
+futures = "0.3"
+rand = "0.8"
+
+[features]
+# this feature is used for production builds or when `devPath` points to the filesystem
+# DO NOT remove this
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,19 @@
+{
+  "name": "mcp-desktop-workspace",
+  "version": "0.1.0",
+  "description": "MCP Desktop AI Workspace - Tauri Application",
+  "main": "index.js",
+  "scripts": {
+    "build": "tauri build",
+    "dev": "tauri dev",
+    "tauri": "tauri"
+  },
+  "workspaces": [
+    "slint-ui",
+    "shared"
+  ],
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.5.0"
+  },
+  "dependencies": {}
+}

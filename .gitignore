@@ -1,0 +1,29 @@
+# Rust
+target/
+Cargo.lock
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.db-journal
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+*.code-workspace
+.history/
