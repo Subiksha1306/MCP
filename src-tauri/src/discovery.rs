@@ -15,13 +15,19 @@ pub struct DiscoveryItem {
     pub metadata: Value,
 }
 
+use crate::agent::Agent;
+
 pub struct DiscoveryEngine {
     db_path: String,
+    agent: Agent,
 }
 
 impl DiscoveryEngine {
     pub fn new(db_path: String) -> Self {
-        Self { db_path }
+        Self { 
+            db_path,
+            agent: Agent::new(),
+        }
     }
 
     pub async fn start_discovery(&self, source: &str, url: &str) -> Result<()> {
@@ -50,6 +56,12 @@ impl DiscoveryEngine {
             let summary = format!("A {} file named {}. Size: {} bytes. Modified: {}", 
                 file.content_type, file.name, file.size, file.last_modified);
             
+            // Index the metadata and title for semantic search
+            let text_to_embed = format!("Title: {}\nSummary: {}", file.name, summary);
+            if let Ok(vec) = self.agent.embed_text(&text_to_embed).await {
+                db.save_embedding(&id, &vec).ok();
+            }
+
             db.save_discovery_item(
                 &id,
                 &file.name,
@@ -86,6 +98,12 @@ impl DiscoveryEngine {
                     .to_string();
 
                 let summary = format!("A record from the {} table in Dataverse.", table.display_name);
+
+                // Index the record for semantic search
+                let text_to_embed = format!("Title: {}\nEntity: {}\nSummary: {}", title, table.display_name, summary);
+                if let Ok(vec) = self.agent.embed_text(&text_to_embed).await {
+                    db.save_embedding(&id, &vec).ok();
+                }
 
                 db.save_discovery_item(
                     &id,

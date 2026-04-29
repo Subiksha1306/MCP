@@ -1,112 +1,125 @@
 # Business Requirements Document: Nexus Server
 
-**Version**: 1.0.0  
-**Status**: Draft  
+**Version**: 1.1.0  
+**Status**: Approved / In Implementation  
 **Project Lead**: Antigravity (AI Architect)
 
 ---
 
 ## 1. Executive Summary
-Nexus Server is a production-ready, local-first AI workspace designed to bridge the gap between enterprise data silos and modern AI document intelligence. Built with a high-performance Rust core and a premium Tauri interface, Nexus Server enables knowledge workers to discover, analyze, and gain insights from heterogeneous data sources like Microsoft SharePoint and Dataverse through a unified, "Orange & Black" themed interface.
+Nexus Server is a production-grade, local-first AI workspace designed to eliminate enterprise data fragmentation. By bridging the gap between legacy data silos (SharePoint, Dataverse) and modern AI document intelligence, Nexus Server provides a high-performance unified interface for data discovery and cognitive analysis.
 
-The project prioritizes **privacy**, **speed**, and **intelligence**, ensuring that enterprise data is indexed locally and processed using state-of-the-art LLMs (Claude/Groq) with streaming capabilities.
+The project leverages a **Rust-based core** for speed and security, integrated with **Tauri** for a premium desktop experience. It enables seamless interaction with enterprise records through standard AI protocols (MCP) and state-of-the-art LLMs.
+
+---
 
 ## 2. Project Objectives
-- **Centralized Document Intelligence**: Provide a single pane of glass for data stored across M365 and Power Platform.
-- **Agentic Automation**: Leverage AI agents to perform complex document analysis, anomaly detection, and summarization.
-- **Local-First Security**: Maintain data sovereignty by indexing and storing normalized records in a local SQLite vector store.
-- **Premium User Experience**: Deliver a high-end, responsive UI that simplifies complex data relationships through modern design standards (Glassmorphism, AOS animations).
+- **Data Sovereignty**: Local-first indexing ensures that sensitive enterprise data stays within the organizational perimeter.
+- **Unified Discovery**: A "Single Pane of Glass" for heterogeneous sources (M365 list items, documents, CRM records).
+- **Agentic Intelligence**: Integrated AI agents capable of performing deep analysis, anomaly detection, and cross-silo summarization.
+- **MCP Compliance**: Serving as a Model Context Protocol (MCP) host, allowing other AI tools to leverage the indexed nexus data.
 
-## 3. Stakeholders
-| Stakeholder | Role / Interest |
-| :--- | :--- |
-| **Project Sponsors** | Strategic oversight and ROI on AI efficiency tools. |
-| **Enterprise IT Admins** | Responsible for authentication configuration, API access, and local node management. |
-| **Knowledge Workers** | Primary end-users utilizing the Explorer and Analysis panels for daily tasks. |
-| **Security & Compliance** | Ensuring AES-256 standards and local data persistence meet organizational policies. |
-| **DevOps** | Managing the local node orchestration and server lifecycle. |
+---
 
-## 4. Target Audience & Use Cases
-### Target Audience
-- Data Analysts and Researchers.
-- Project Managers overseeing M365 ecosystems.
-- Enterprise Developers building MCP-compliant tools.
+## 3. Scope of Work
+### 3.1 Included Features
+1. **Identity & Soft Gate**: Professional Microsoft Login integration with organizational vetting.
+2. **Nexus Explorer**: High-performance data grid with real-time discovery and pagination.
+3. **Cognitive Analytics**: 
+    - **Quick Summary**: Instant condensation of records.
+    - **Deep Neural Analysis**: Comprehensive relational mapping and recommendation generation.
+    - **Anomaly Detection**: Algorithmic identification of data inconsistencies.
+4. **Data Connectors**: Bi-directional discovery engines for SharePoint and Dataverse.
+5. **Infrastructure Control**: Management of the integrated local MCP node (Axum-based).
 
-### Key Use Cases
-1. **Cross-Silo Discovery**: Finding a specific contract in SharePoint while comparing its financial terms with a record in Dataverse.
-2. **Cognitive Summarization**: Generating a deep dive analysis of a 100-page technical document in seconds.
-3. **Anomalies Detection**: identifying inconsistencies in normalized enterprise data sets.
-4. **Local MCP Hosting**: Using the integrated server as a context provider for other AI tools.
+### 3.2 Out of Scope
+- Direct write-back to enterprise systems (Read-only discovery focus for V1).
+- Multi-user collaboration on a single local node (Single-user focus).
+
+---
+
+## 4. Technical Architecture
+
+```mermaid
+graph TD
+    subgraph UI_Layer [Frontend: Tauri + JS]
+        MainUI[Dashboard / Explorer]
+        InsightPanel[Cognitive Analysis View]
+    end
+
+    subgraph Backend_Core [Core: Rust / Tauri Runtime]
+        TauriCmds[Command Bridge]
+        DiscoveryEngine[Discovery & Normalization]
+        AgentControl[Agent Orchestration]
+    end
+
+    subgraph Infrastructure [Self-Hosted Services]
+        MCPServer[MCP Server: Axum Node]
+        LocalDB[(SQLite: memory.db)]
+    end
+
+    subgraph External_Services [Cloud Interfaces]
+        GroqAPI[AI: Groq / Llama 3.3]
+        SP_API[SharePoint Graph API]
+        DV_API[Dataverse Web API]
+    end
+
+    MainUI <--> TauriCmds
+    TauriCmds <--> DiscoveryEngine
+    TauriCmds <--> AgentControl
+    
+    DiscoveryEngine -->|Normalized Data| LocalDB
+    DiscoveryEngine <--> SP_API
+    DiscoveryEngine <--> DV_API
+    
+    AgentControl <--> GroqAPI
+    AgentControl -->|Context| LocalDB
+    
+    MCPServer -->|Exposes Tools| LocalDB
+```
 
 ---
 
 ## 5. Functional Requirements
+
 ### 5.1 Identity & Authentication
-- **Microsoft Login**: Integration with organization Microsoft accounts for workspace access.
-- **Identity Gating**: Soft-gate mechanism that restricts access to the Sidebar and Dashboard sections until identity is verified.
-- **Session Management**: Secure persistence of authentication states throughout the application lifecycle.
+- **System soft-gate**: All explorer and analysis features are restricted until a successful Microsoft Login event.
+- **OBO (On-Behalf-Of) Ready**: Architecture supports delegated tokens for secure API access.
 
 ### 5.2 Nexus Explorer
-- **Normalized Data Grid**: A unified table for records, files, and list items from disparate sources.
-- **Enterprise Discovery Search**: Real-time filtering and querying of the local discovery database.
-- **Pagination**: High-performance data fetching with forward/backward pagination support.
-- **Metadata Inspection**: One-click expanded view for deep metadata object inspection.
+- **Normalized Grid**: Unified schema for documents (SharePoint) and records (Dataverse).
+- **Infinite Scaling**: Paginated data loading from the local `memory.db` to ensure UI responsiveness.
+- **Persistence**: Discovery data persists across application restarts in local SQLite storage.
 
-### 5.3 Cognitive Analysis (AI)
-- **Streaming Handshake**: Real-time message streaming from AI agents to the UI.
-- **Analysis Modes**:
-    - *Quick Summary*: Instant generation of high-level overview.
-    - *Deep Analysis*: Comprehensive exploration of item context and relationships.
-    - *Anomaly Detection*: Algorithmic identification of data outliers.
-- **Memory Database**: Local storage of chat history for contextual continuity.
+### 5.3 Cognitive Intelligence
+- **Streaming Responses**: AI analysis results stream in real-time to the "Intelligence Panel."
+- **Mock Insight Layer**: High-quality pre-defined analysis for demo assets to ensure premium user experience without immediate API setup.
+- **Contextual Memory**: Local chat history stored to maintain continuity in data-driven conversations.
 
 ### 5.4 Data Connectors
-- **SharePoint Connector**: Live indexing for document libraries with site-URL mapping.
-- **Dataverse Connector**: Entity-based record fetching and filtering.
-- **Background Normalization**: Non-blocking discovery runs that populate the local engine while the user works.
+- **SharePoint**: Discovery of document libraries and metadata extraction.
+- **Dataverse**: Entity-based discovery for CRM and ERP data.
+- **Status Monitoring**: Real-time visual feedback on sync progress and record counts.
 
-### 5.5 Local Node Orchestration
-- **Integrated MCP Server**: Local Axum-based server accessible via port 3721.
-- **Lifecycle Control**: User-driven 'Start Node' and 'Shutdown' commands via the Infrastructure settings.
+---
 
 ## 6. Non-Functional Requirements
-- **Performance**:
-    - Skeleton loaders for perceived instant responsiveness.
-    - 60FPS UI transitions (AOS library integration).
-- **Security**:
-    - Local record encryption (AES-256 standards referenced).
-    - Zero-Context Wipe: "Wipe Memory" feature for local database purging.
+- **Performance**: 
+    - UI interaction targeting 60FPS using customized AOS (Animate On Scroll).
+    - Database queries under 100ms for standard search operations.
 - **Aesthetics**:
-    - *Theme*: "Orange & Black" premium glassmorphism.
-    - *Typography*: 'Outfit' (Sans-Serif) and 'Playfair Display' (Serif) fonts.
-    - *Animations*: Custom cubic-bezier transitions for sidebar and modals.
+    - **Color Palette**: Cyberpunk-influenced "Gold & Black" (Accents: `#FF6A00`, Background: `#0B0B0D`).
+    - **UI Standard**: Heavy use of backdrop blurs (Glassmorphism) and rounded corners (24px).
+- **Security**: 
+    - Local data encryption at rest (AES-256 standard goal).
+    - API keys managed via local `.env` configuration.
 
-## 7. Technical Architecture
-```mermaid
-graph TD
-    UI[HTML/CSS/JS Frontend] -->|Tauri Commands| Backend[Rust Tauri Core]
-    Backend -->|Spawns| MCPServer[MCP Server - Axum]
-    Backend -->|Manages| DB[(SQLite - memory.db)]
-    Backend -->|Invokes| Agent[Claude/Groq Agent]
-    
-    Discovery[Discovery Engine] -->|Syncs| SP[SharePoint API]
-    Discovery -->|Syncs| DV[Dataverse API]
-    Discovery -->|Normalizes| DB
-    
-    Agent -->|Streaming| UI
-```
+---
 
-## 8. UI/UX Design Standards
-- **Color Palette**: 
-    - Accent: `#FF6A00` (Orange)
-    - Background: `#0B0B0D` (Deep Black)
-    - Borders: `rgba(255, 255, 255, 0.08)`
-- **Components**: Rounded corners (`24px` radius), Backdrop blurs (`20px`), and Pulsing glows on interactive logos.
-
-## 9. Future Scope
-- **Production PKCE Auth**: Full implementation of the Microsoft PKCE flow.
-- **SSE Chat Expansion**: Extending server-sent events for multi-agent coordination.
-- **Enhanced Vector Store**: Advanced RAG (Retrieval Augmented Generation) integration with local embedding models.
+## 7. Roadmap & Future Scope
+- **V1.2**: Implementation of Local Vector Store (RAG) for deep document search.
+- **V1.5**: Multi-agent coordination for complex enterprise workflows.
+- **V2.0**: Production-ready Microsoft Entra ID PKCE authentication.
 
 ---
 **End of Document**

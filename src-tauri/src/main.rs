@@ -25,11 +25,18 @@ pub struct AppStateInner {
 }
 
 fn main() {
+    dotenv::dotenv().ok();
     let db_path = "memory.db";
     let memory_db = db::MemoryDB::new(db_path).ok();
+    
+    if let Some(db) = &memory_db {
+        let _ = db.seed_initial_data();
+    }
+
     let agent_instance = agent::Agent::new();
 
     let state = AppState(Arc::new(Mutex::new(AppStateInner {
+
         mcp_server_handle: None,
         db: memory_db,
         agent: agent_instance,

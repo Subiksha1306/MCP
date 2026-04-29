@@ -116,7 +116,7 @@ pub async fn search_documents(
             // Log to memory
             let state_guard = state.0.lock().await;
             if let Some(db) = &state_guard.db {
-                let _ = db.update_sync_stats("vector_store", 1);
+                let _: rusqlite::Result<()> = db.update_sync_stats("vector_store", 1);
             }
 
             // Parse the result and return proper SearchResult structs
@@ -150,31 +150,36 @@ pub async fn chat_message(
     window: Window,
     state: State<'_, crate::AppState>,
 ) -> Result<serde_json::Value, String> {
-    let state_guard = state.0.lock().await;
-    
-    // 1. Save user message to memory
-    if let Some(db) = &state_guard.db {
-        let _ = db.save_message("user", &message);
-    }
+    // 1. Save user message and get history/agent (hold lock briefly)
+    let (history, agent) = {
+        let state_guard = state.0.lock().await;
+        
+        if let Some(db) = &state_guard.db {
+            let _: rusqlite::Result<()> = db.save_message("user", &message);
+        }
 
-    // 2. Load context
-    let history_raw = if let Some(db) = &state_guard.db {
-        db.get_chat_history(10).unwrap_or_default()
-    } else {
-        vec![]
+        let history_raw = if let Some(db) = &state_guard.db {
+            db.get_chat_history(10).unwrap_or_else(|_| vec![])
+        } else {
+            vec![]
+        };
+
+        let history: Vec<crate::agent::Message> = history_raw.into_iter().map(|(r, c)| {
+            crate::agent::Message { role: r, content: c }
+        }).collect();
+
+        (history, state_guard.agent.clone())
     };
 
-    let history = history_raw.into_iter().map(|(r, c)| {
-        crate::agent::Message { role: r, content: c }
-    }).collect();
+    // 2. Process with Agent (AI call, don't hold lock)
+    let response: String = agent.chat_with_streaming(history, &window).await?;
 
-    // 3. Process with Agent (using the key we hardcoded)
-    let agent = &state_guard.agent;
-    let response = agent.chat_with_streaming(history, &window).await?;
-
-    // 4. Save AI response to memory
-    if let Some(db) = &state_guard.db {
-        let _ = db.save_message("assistant", &response);
+    // 3. Save AI response (hold lock briefly)
+    {
+        let state_guard = state.0.lock().await;
+        if let Some(db) = &state_guard.db {
+            let _: rusqlite::Result<()> = db.save_message("assistant", &response);
+        }
     }
 
     Ok(serde_json::json!({
@@ -224,7 +229,7 @@ pub async fn fetch_sharepoint_files(
             // Log to memory
             let state_guard = state.0.lock().await;
             if let Some(db) = &state_guard.db {
-                let _ = db.update_sync_stats("sharepoint", 1);
+                let _: rusqlite::Result<()> = db.update_sync_stats("sharepoint", 1);
             }
 
             // Parse the result and return proper SharePointFile structs
@@ -289,7 +294,7 @@ pub async fn get_discovery_data(
         .ok_or_else(|| "Database not initialized".to_string())?;
 
     db.get_paginated_discovery(page, limit)
-        .map_err(|e| e.to_string())
+        .map_err(|e: rusqlite::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -297,12 +302,31 @@ pub async fn search_discovery(
     query: String,
     state: State<'_, crate::AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
+    // 1. Get embedding (AI call, don't hold lock)
+    let agent = {
+        let state_guard = state.0.lock().await;
+        state_guard.agent.clone()
+    };
+    
+    let embedding = agent.embed_text(&query).await.ok();
+
+    // 2. Perform search (DB call, hold lock)
     let state_guard = state.0.lock().await;
     let db = state_guard.db.as_ref()
         .ok_or_else(|| "Database not initialized".to_string())?;
+    
+    if let Some(emb) = embedding {
+        if let Ok(results) = db.semantic_search(&emb, 20) {
+            let results_val: Vec<serde_json::Value> = results; 
+            if !results_val.is_empty() {
+                return Ok(results_val);
+            }
+        }
+    }
 
+    // Fallback to keyword search
     db.search_discovery(&query)
-        .map_err(|e| e.to_string())
+        .map_err(|e: rusqlite::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -346,7 +370,7 @@ pub async fn query_dataverse(
             // Log to memory
             let state_guard = state.0.lock().await;
             if let Some(db) = &state_guard.db {
-                let _ = db.update_sync_stats("dataverse", 1);
+                let _: rusqlite::Result<()> = db.update_sync_stats("dataverse", 1);
             }
 
             // Parse the result and return proper DataverseRecord structs
