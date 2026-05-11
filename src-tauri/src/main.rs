@@ -14,6 +14,8 @@ mod commands;
 mod db;
 mod agent;
 mod discovery;
+mod permissions;
+mod retrieval;
 
 // Shared state for the application
 pub struct AppState(pub Arc<Mutex<AppStateInner>>);
@@ -26,6 +28,7 @@ pub struct AppStateInner {
 
 fn main() {
     dotenv::dotenv().ok();
+    permissions::validate_startup_permissions();
     let db_path = "memory.db";
     let memory_db = db::MemoryDB::new(db_path).ok();
     
@@ -58,7 +61,13 @@ fn main() {
             commands::get_discovery_data,
             commands::search_discovery,
             commands::analyze_enterprise_item,
-            commands::query_dataverse
+            commands::ask_nexus,
+            commands::smart_search,
+            commands::get_knowledge_stats,
+            commands::get_nexus_query_history,
+            commands::get_audit_logs,
+            commands::query_dataverse,
+            commands::get_auth_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

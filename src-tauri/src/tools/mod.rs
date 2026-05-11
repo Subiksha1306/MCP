@@ -1,16 +1,30 @@
+use crate::permissions::PermissionLevel;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
 pub type ToolFn = fn(&Value) -> Value;
 
-pub fn get_tools() -> HashMap<String, ToolFn> {
-    let mut tools: HashMap<String, ToolFn> = HashMap::new();
 
-    tools.insert("echo".to_string(), echo);
-    tools.insert("search".to_string(), search);
-    tools.insert("search_documents".to_string(), search_documents);
-    tools.insert("fetch_sharepoint_files".to_string(), fetch_sharepoint_files);
-    tools.insert("query_dataverse".to_string(), query_dataverse);
+pub struct Tool {
+    pub name: String,
+    pub func: ToolFn,
+    pub required_permission: PermissionLevel,
+}
+
+pub fn get_tools() -> HashMap<String, Tool> {
+    let mut tools: HashMap<String, Tool> = HashMap::new();
+
+    let tool_list = vec![
+        Tool { name: "echo".to_string(), func: echo, required_permission: PermissionLevel::ReadOnly },
+        Tool { name: "search".to_string(), func: search, required_permission: PermissionLevel::ReadOnly },
+        Tool { name: "search_documents".to_string(), func: search_documents, required_permission: PermissionLevel::ReadOnly },
+        Tool { name: "fetch_sharepoint_files".to_string(), func: fetch_sharepoint_files, required_permission: PermissionLevel::ReadOnly },
+        Tool { name: "query_dataverse".to_string(), func: query_dataverse, required_permission: PermissionLevel::ReadOnly },
+    ];
+
+    for t in tool_list {
+        tools.insert(t.name.clone(), t);
+    }
 
     tools
 }

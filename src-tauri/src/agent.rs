@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use tauri::Window;
 use crate::tools::get_tools;
 
-// Key will be read from environment in execute_gemini_request
-const MODEL: &str = "gemini-2.0-flash";
-const EMBED_MODEL: &str = "text-embedding-004";
+// Groq configuration
+const GROQ_MODEL: &str = "llama-3.3-70b-versatile";
+const EMBED_MODEL: &str = "gemini-embedding-001"; // Still using Gemini for embeddings for now
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -59,14 +59,14 @@ impl Agent {
         let system_msg = self.get_system_prompt();
         
         for msg in history {
-            let role = if msg.role == "user" { "user" } else { "model" };
+            let role = if msg.role == "user" { "user" } else { "assistant" };
             contents.push(json!({
                 "role": role,
-                "parts": [{"text": msg.content}]
+                "content": msg.content
             }));
         }
 
-        self.execute_gemini_request(contents, system_msg, window, 0.5).await
+        self.execute_groq_request(contents, system_msg, window, 0.5).await
     }
 
     pub async fn analyze_item(
@@ -134,8 +134,8 @@ impl Agent {
             _ => "Provide a general analysis of this enterprise data.".to_string(),
         };
 
-        let contents = vec![json!({"role": "user", "parts": [{"text": prompt}]})];
-        self.execute_gemini_request(contents, "You are a highly structured Enterprise Intelligence Agent.".to_string(), window, 0.2).await
+        let contents = vec![json!({"role": "user", "content": prompt})];
+        self.execute_groq_request(contents, "You are a highly structured Enterprise Intelligence Agent.".to_string(), window, 0.2).await
     }
 
     pub async fn embed_text(&self, text: &str) -> Result<Vec<f32>, String> {
@@ -172,45 +172,120 @@ impl Agent {
         Ok(embedding)
     }
 
-    async fn execute_gemini_request(
+    /// RAG-powered query: takes pre-retrieved relevant chunks and generates a grounded answer
+    pub async fn process_rag_query(
         &self,
-        contents: Vec<Value>,
+        question: String,
+        retrieved_chunks: Vec<serde_json::Value>, // Results from semantic_chunk_search
+        window: &Window,
+    ) -> Result<String, String> {
+        if retrieved_chunks.is_empty() {
+            return Ok("No relevant content was found in the knowledge base for your query. Try running a discovery sync to index documents, or rephrase your question.".to_string());
+        }
+
+        // Build focused context from retrieved chunks
+        let mut context = String::new();
+        for chunk in retrieved_chunks.iter() {
+            let title = chunk["doc_title"].as_str().unwrap_or("Unknown");
+            let content = chunk["content"].as_str().unwrap_or("");
+            let similarity = chunk["similarity"].as_f64().unwrap_or(0.0);
+            let chunk_index = chunk["chunk_index"].as_u64().unwrap_or(0);
+
+            context.push_str(&format!(
+                "\n[Source: {} | Chunk: {} | Relevance: {:.0}%]\n{}\n",
+                title, chunk_index + 1, similarity * 100.0, content
+            ));
+        }
+
+        let system_prompt = format!(
+            "You are Nexus AI, an elite enterprise intelligence assistant with RAG-powered retrieval.
+
+RETRIEVED CONTEXT (ranked by relevance):
+{}
+
+INSTRUCTIONS:
+1. Answer the user's question using ONLY the retrieved context above.
+2. ALWAYS cite your sources using this format: [Source: Document Name | Chunk: N]
+3. If multiple chunks from the same document are relevant, consolidate them in your reasoning but cite them all.
+4. If the context doesn't contain enough information, say so honestly.
+5. Be concise, professional, and structured. Use markdown formatting.
+6. For data questions (dates, numbers, names), extract precisely from the context.
+7. For analysis questions, synthesize insights across multiple sources.
+8. Never fabricate information not present in the retrieved context.",
+            context
+        );
+
+        let contents = vec![serde_json::json!({"role": "user", "content": question})];
+        self.execute_groq_request(contents, system_prompt, window, 0.2).await
+    }
+
+    /// Legacy full-context method (kept for backward compatibility)
+    pub async fn ask_with_full_context(
+        &self,
+        question: String,
+        data_contexts: Vec<(String, String, String, String)>,
+        window: &Window,
+    ) -> Result<String, String> {
+        let mut knowledge_base = String::new();
+        for (i, (title, source, summary, metadata)) in data_contexts.iter().enumerate() {
+            knowledge_base.push_str(&format!(
+                "\n--- Document {} ---\nTitle: {}\nSource: {}\nSummary: {}\nMetadata: {}\n",
+                i + 1, title, source, summary, metadata
+            ));
+        }
+
+        let system_prompt = format!(
+            "You are Nexus AI, an elite enterprise intelligence assistant. You have access to the following knowledge base:\n{}\n\nINSTRUCTIONS:\n1. Answer using ONLY the knowledge base above.\n2. Cite sources by name: [Source: Document Name]\n3. If data is insufficient, say so clearly.\n4. Use markdown formatting.",
+            knowledge_base
+        );
+
+        let contents = vec![serde_json::json!({"role": "user", "content": question})];
+        self.execute_groq_request(contents, system_prompt, window, 0.3).await
+    }
+
+    async fn execute_groq_request(
+        &self,
+        mut messages: Vec<Value>,
         system_instruction: String,
         window: &Window,
         temp: f32,
     ) -> Result<String, String> {
-        let api_key = std::env::var("GOOGLE_API_KEY")
-            .map_err(|_| "GOOGLE_API_KEY not found in environment".to_string())?;
+        let api_key = std::env::var("GROQ_API_KEY")
+            .map_err(|_| "GROQ_API_KEY not found in environment".to_string())?;
 
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            MODEL, api_key
-        );
+        let url = "https://api.groq.com/openai/v1/chat/completions";
+
+        // Prepend system message
+        messages.insert(0, json!({
+            "role": "system",
+            "content": system_instruction
+        }));
 
         let body = json!({
-            "contents": contents,
-            "system_instruction": {
-                "parts": [{"text": system_instruction}]
-            },
-            "generationConfig": {
-                "temperature": temp,
-                "maxOutputTokens": 2048,
-            }
+            "model": GROQ_MODEL,
+            "messages": messages,
+            "temperature": temp,
+            "max_tokens": 2048,
         });
 
         let response: Value = self.client
-            .post(&url)
+            .post(url)
+            .header("Authorization", format!("Bearer {}", api_key))
             .json(&body)
             .send()
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("Request failed: {}", e))?
             .json()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("JSON parsing failed: {}", e))?;
 
-        let content = response["candidates"][0]["content"]["parts"][0]["text"]
+        if let Some(error) = response.get("error") {
+            return Err(format!("Groq Error: {}", error["message"].as_str().unwrap_or("Unknown error")));
+        }
+
+        let content = response["choices"][0]["message"]["content"]
             .as_str()
-            .ok_or_else(|| format!("Invalid response from Gemini: {:?}", response))?
+            .ok_or_else(|| format!("Invalid response from Groq: {:?}", response))?
             .to_string();
 
         // Emit to frontend for 'streaming' effect

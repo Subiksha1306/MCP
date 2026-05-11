@@ -110,8 +110,8 @@ pub async fn search_documents(
     });
 
     match tools.get("search_documents") {
-        Some(tool_fn) => {
-            let result = tool_fn(&args);
+        Some(tool) => {
+            let result = (tool.func)(&args);
             
             // Log to memory
             let state_guard = state.0.lock().await;
@@ -191,6 +191,11 @@ pub async fn chat_message(
 pub async fn upload_document(
     payload: UploadDocumentPayload,
 ) -> Result<serde_json::Value, String> {
+    let current_permission = crate::permissions::PermissionLevel::from_env();
+    if !current_permission.can_execute(crate::permissions::PermissionLevel::ReadWrite) {
+        return Err("Forbidden: Write operations are disabled in this environment".to_string());
+    }
+
     let mut data_dir = std::env::temp_dir();
     data_dir.push("mcp-desktop");
     fs::create_dir_all(&data_dir).map_err(|err| err.to_string())?;
@@ -202,6 +207,7 @@ pub async fn upload_document(
         "path": file_path.to_string_lossy(),
     }))
 }
+
 
 #[tauri::command]
 pub async fn save_claude_key(
@@ -223,8 +229,8 @@ pub async fn fetch_sharepoint_files(
     });
 
     match tools.get("fetch_sharepoint_files") {
-        Some(tool_fn) => {
-            let result = tool_fn(&args);
+        Some(tool) => {
+            let result = (tool.func)(&args);
             
             // Log to memory
             let state_guard = state.0.lock().await;
@@ -364,8 +370,8 @@ pub async fn query_dataverse(
     }
 
     match tools.get("query_dataverse") {
-        Some(tool_fn) => {
-            let result = tool_fn(&args);
+        Some(tool) => {
+            let result = (tool.func)(&args);
             
             // Log to memory
             let state_guard = state.0.lock().await;
@@ -378,7 +384,7 @@ pub async fn query_dataverse(
                 if let Some(records_array) = records.as_array() {
                     let dataverse_records: Vec<DataverseRecord> = records_array
                         .iter()
-                        .filter_map(|r| {
+                        .filter_map(|r: &serde_json::Value| {
                             Some(DataverseRecord {
                                 id: r.get("id")?.as_str()?.to_string(),
                                 fields: r.clone(),
@@ -395,4 +401,204 @@ pub async fn query_dataverse(
         }
         None => Err("Tool not found".to_string()),
     }
+}
+
+#[tauri::command]
+pub async fn ask_nexus(
+    prompt: String,
+    source_filter: Option<String>,
+    category_filter: Option<String>,
+    window: Window,
+    state: State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let start_time = std::time::Instant::now();
+
+    // 1. Authorize the query via RBAC
+    let security_ctx = crate::permissions::SecurityContext::from_env();
+    security_ctx.authorize_query(&prompt)?;
+
+    // 2. Embed the query and retrieve relevant chunks (lock briefly for DB)
+    let (chunks, agent, chunk_count) = {
+        let state_guard = state.0.lock().await;
+        let db = state_guard.db.as_ref()
+            .ok_or_else(|| "Database not initialized".to_string())?;
+        let agent = state_guard.agent.clone();
+
+        let chunk_count = db.get_chunk_count().unwrap_or(0);
+
+        if chunk_count == 0 {
+            return Ok(serde_json::json!({
+                "reply": "No indexed chunks found. Please run a discovery sync from the Connectors page to build the semantic knowledge base. Full-document summarization has been disabled to enforce strict RAG retrieval.",
+                "sources": [],
+                "sources_count": 0,
+                "retrieved_chunks": [],
+                "query_time_ms": start_time.elapsed().as_millis(),
+                "rag_mode": false
+            }));
+        }
+
+        // Embed query (release lock first to avoid holding across await)
+        drop(state_guard);
+
+        let embedding = agent.embed_text(&prompt).await
+            .map_err(|e| format!("Embedding failed: {}", e))?;
+
+        // Re-acquire lock for DB search
+        let state_guard = state.0.lock().await;
+        let db = state_guard.db.as_ref()
+            .ok_or_else(|| "Database not initialized".to_string())?;
+
+        let results = db.semantic_chunk_search(&embedding, 10, source_filter, category_filter)
+            .map_err(|e| format!("Chunk search failed: {}", e))?;
+
+        (results, agent, chunk_count)
+    };
+
+    if chunks.is_empty() {
+        return Ok(serde_json::json!({
+            "reply": "No enterprise data available. Please run a discovery sync from the Connectors page first.",
+            "sources": [],
+            "sources_count": 0,
+            "query_time_ms": start_time.elapsed().as_millis(),
+            "rag_mode": false
+        }));
+    }
+
+    // 3. Extract unique source titles for citation
+    let mut source_titles: Vec<String> = chunks.iter()
+        .filter_map(|c| c["doc_title"].as_str().map(|s| s.to_string()))
+        .collect();
+    source_titles.dedup();
+    let sources_count = source_titles.len();
+
+    // 4. Generate RAG-powered response
+    let response = agent.process_rag_query(prompt.clone(), chunks.clone(), &window).await?;
+
+    let elapsed_ms = start_time.elapsed().as_millis() as i64;
+
+    // 5. Log query and audit trail
+    {
+        let state_guard = state.0.lock().await;
+        if let Some(db) = &state_guard.db {
+            let _ = db.log_query(&prompt, sources_count as i64, elapsed_ms, &source_titles.join(", "));
+            let _ = db.log_audit(&security_ctx.user_id, "ask_nexus", &prompt, "success", &format!("{} sources, {}ms", sources_count, elapsed_ms));
+            let _ = db.save_message("user", &format!("[Ask Nexus] {}", &prompt));
+            let _ = db.save_message("assistant", &response);
+        }
+    }
+
+    Ok(serde_json::json!({
+        "reply": response,
+        "sources": source_titles,
+        "sources_count": sources_count,
+        "retrieved_chunks": chunks,
+        "query_time_ms": elapsed_ms,
+        "rag_mode": chunk_count > 0
+    }))
+}
+
+#[tauri::command]
+pub async fn smart_search(
+    query: String,
+    top_k: Option<u32>,
+    source_filter: Option<String>,
+    category_filter: Option<String>,
+    state: State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let security_ctx = crate::permissions::SecurityContext::from_env();
+    security_ctx.authorize_query(&query)?;
+
+    let agent = {
+        let state_guard = state.0.lock().await;
+        state_guard.agent.clone()
+    };
+
+    let embedding = agent.embed_text(&query).await
+        .map_err(|e| format!("Embedding failed: {}", e))?;
+
+    let state_guard = state.0.lock().await;
+    let db = state_guard.db.as_ref()
+        .ok_or_else(|| "Database not initialized".to_string())?;
+
+    let k = top_k.unwrap_or(10);
+    let chunks = db.semantic_chunk_search(&embedding, k, source_filter, category_filter)
+        .map_err(|e| format!("Search failed: {}", e))?;
+
+    // Also try keyword fallback
+    let keyword_results = db.search_discovery(&query)
+        .map_err(|e| format!("Keyword search failed: {}", e))?;
+
+    let _ = db.log_audit(&security_ctx.user_id, "smart_search", &query, "success", &format!("{} chunks found", chunks.len()));
+
+    Ok(serde_json::json!({
+        "semantic_results": chunks,
+        "keyword_results": keyword_results,
+        "total_chunks": chunks.len(),
+        "total_keyword": keyword_results.len()
+    }))
+}
+
+#[tauri::command]
+pub async fn get_knowledge_stats(
+    state: State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let state_guard = state.0.lock().await;
+    let db = state_guard.db.as_ref()
+        .ok_or_else(|| "Database not initialized".to_string())?;
+
+    let chunk_count = db.get_chunk_count().unwrap_or(0);
+    let doc_counts = db.get_doc_count_by_source().unwrap_or_default();
+
+    let total_docs: i64 = doc_counts.iter().map(|(_, c)| c).sum();
+    let sp_count = doc_counts.iter().find(|(s, _)| s == "SharePoint").map(|(_, c)| *c).unwrap_or(0);
+    let dv_count = doc_counts.iter().find(|(s, _)| s == "Dataverse").map(|(_, c)| *c).unwrap_or(0);
+
+    Ok(serde_json::json!({
+        "total_documents": total_docs,
+        "sharepoint_count": sp_count,
+        "dataverse_count": dv_count,
+        "total_chunks": chunk_count,
+        "rag_enabled": chunk_count > 0
+    }))
+}
+
+#[tauri::command]
+pub async fn get_nexus_query_history(
+    limit: Option<u32>,
+    state: State<'_, crate::AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let state_guard = state.0.lock().await;
+    let db = state_guard.db.as_ref()
+        .ok_or_else(|| "Database not initialized".to_string())?;
+    db.get_query_history(limit.unwrap_or(20))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_audit_logs(
+    limit: Option<u32>,
+    state: State<'_, crate::AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let security_ctx = crate::permissions::SecurityContext::from_env();
+    if !security_ctx.role.can_admin() {
+        return Err("Forbidden: Only Admin users can view audit logs.".to_string());
+    }
+    let state_guard = state.0.lock().await;
+    let db = state_guard.db.as_ref()
+        .ok_or_else(|| "Database not initialized".to_string())?;
+    db.get_audit_logs(limit.unwrap_or(50))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_auth_config() -> Result<serde_json::Value, String> {
+    let client_id = std::env::var("AZURE_CLIENT_ID").unwrap_or_default();
+    let tenant_id = std::env::var("AZURE_TENANT_ID").unwrap_or_default();
+    let redirect_uri = std::env::var("AZURE_REDIRECT_URI").unwrap_or_else(|_| "http://localhost:1420".to_string());
+    
+    Ok(serde_json::json!({
+        "client_id": client_id,
+        "tenant_id": tenant_id,
+        "redirect_uri": redirect_uri
+    }))
 }

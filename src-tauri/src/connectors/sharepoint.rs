@@ -74,7 +74,26 @@ impl SharePointConnector {
         Ok(files)
     }
 
-    /// Get content of a specific file
+    /// Get raw bytes content of a specific file (for PDF, DOCX, XLSX extraction)
+    pub async fn get_file_content_bytes(&self, file_url: &str) -> Result<Vec<u8>> {
+        let url = format!("{}/_api/web/getfilebyserverrelativeurl('{}')/$value", self.site_url, file_url);
+
+        let response = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.access_token))
+            .send()
+            .await
+            .context("Failed to fetch file content bytes")?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("Failed to get file bytes: {}", response.status()));
+        }
+
+        let bytes = response.bytes().await?;
+        Ok(bytes.to_vec())
+    }
+
+    /// Get content of a specific file as plain text (legacy)
     pub async fn get_file_content(&self, file_url: &str) -> Result<String> {
         let url = format!("{}/_api/web/getfilebyserverrelativeurl('{}')/$value", self.site_url, file_url);
 

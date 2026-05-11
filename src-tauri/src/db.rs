@@ -84,6 +84,53 @@ impl MemoryDB {
             [],
         )?;
 
+        // RAG: Document chunks table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS document_chunks (
+                id TEXT PRIMARY KEY,
+                doc_id TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                content_hash TEXT,
+                embedding BLOB,
+                FOREIGN KEY(doc_id) REFERENCES enterprise_data(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        // Security: Audit log
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_id TEXT DEFAULT 'system',
+                action TEXT NOT NULL,
+                resource TEXT,
+                status TEXT DEFAULT 'success',
+                details TEXT
+            )",
+            [],
+        )?;
+
+        // Performance: Query log
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS query_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                prompt TEXT NOT NULL,
+                chunks_retrieved INTEGER DEFAULT 0,
+                response_time_ms INTEGER DEFAULT 0,
+                sources TEXT
+            )",
+            [],
+        )?;
+
+        // Add content_hash to enterprise_data if not exists
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON document_chunks(doc_id)",
+            [],
+        )?;
+
         Ok(Self { conn })
     }
 
@@ -300,9 +347,226 @@ impl MemoryDB {
             };
 
             self.save_discovery_item(id, title, source, cat, sum, &metadata)?;
+            
+            // Generate a mock chunk for RAG to function in Demo Mode
+            let chunk_id = format!("{}_chunk_0", id);
+            let content = format!("Document Context for {}:\nCategory: {}\nSummary: {}\nThis is simulated content demonstrating the RAG retrieval pipeline.", title, cat, sum);
+            self.save_chunk(&chunk_id, id, 0, &content, "mock_hash")?;
+            
+            // Save dummy embedding (Gemini uses 768 dimensions)
+            let dummy_embedding = vec![0.01f32; 768];
+            self.save_chunk_embedding(&chunk_id, &dummy_embedding)?;
+            
+            // Also save embedding for the document itself
+            self.save_embedding(id, &dummy_embedding)?;
         }
 
         Ok(())
+    }
+
+    /// Fetch all enterprise data for full-context AI queries
+    pub fn get_all_enterprise_data(&self) -> Result<Vec<(String, String, String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT title, source_type, summary, metadata FROM enterprise_data ORDER BY timestamp DESC"
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2).unwrap_or_default(),
+                row.get::<_, String>(3).unwrap_or_default(),
+            ))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    // ============================
+    // RAG: Document Chunk Methods
+    // ============================
+
+    pub fn save_chunk(&self, id: &str, doc_id: &str, chunk_index: usize, content: &str, content_hash: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO document_chunks (id, doc_id, chunk_index, content, content_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET content = ?4, content_hash = ?5",
+            params![id, doc_id, chunk_index as i64, content, content_hash],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_chunk_embedding(&self, chunk_id: &str, embedding: &[f32]) -> Result<()> {
+        let bytes = vec_to_bytes(embedding);
+        self.conn.execute(
+            "UPDATE document_chunks SET embedding = ?1 WHERE id = ?2",
+            params![bytes, chunk_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_chunk_count(&self) -> Result<i64> {
+        self.conn.query_row(
+            "SELECT COUNT(*) FROM document_chunks WHERE embedding IS NOT NULL",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+    }
+
+    pub fn get_doc_count_by_source(&self) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT source_type, COUNT(*) FROM enterprise_data GROUP BY source_type"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Semantic search over document chunks — the core RAG retrieval
+    pub fn semantic_chunk_search(
+        &self, 
+        query_embedding: &[f32], 
+        top_k: u32,
+        source_filter: Option<String>,
+        category_filter: Option<String>
+    ) -> Result<Vec<serde_json::Value>> {
+        let bytes = vec_to_bytes(query_embedding);
+        let s_filter = source_filter.unwrap_or_default();
+        let c_filter = category_filter.unwrap_or_default();
+        
+        let mut sql = "SELECT c.id, c.doc_id, c.content, c.chunk_index,
+                    e.title, e.source_type, e.category,
+                    cosine_similarity(c.embedding, ?1) as similarity
+             FROM document_chunks c
+             JOIN enterprise_data e ON c.doc_id = e.id
+             WHERE c.embedding IS NOT NULL".to_string();
+
+        if !s_filter.is_empty() {
+            sql.push_str(" AND e.source_type = ?3");
+        } else {
+            sql.push_str(" AND (?3 = '' OR 1=1)");
+        }
+        
+        if !c_filter.is_empty() {
+            sql.push_str(" AND e.category = ?4");
+        } else {
+            sql.push_str(" AND (?4 = '' OR 1=1)");
+        }
+        
+        sql.push_str(" ORDER BY similarity DESC LIMIT ?2");
+
+        let mut stmt = self.conn.prepare(&sql)?;
+
+        let rows = stmt.query_map(params![
+            bytes, 
+            top_k, 
+            s_filter, 
+            c_filter
+        ], |row| {
+            Ok(serde_json::json!({
+                "chunk_id": row.get::<_, String>(0)?,
+                "doc_id": row.get::<_, String>(1)?,
+                "content": row.get::<_, String>(2)?,
+                "chunk_index": row.get::<_, i64>(3)?,
+                "doc_title": row.get::<_, String>(4)?,
+                "source_type": row.get::<_, String>(5)?,
+                "category": row.get::<_, String>(6).unwrap_or_default(),
+                "similarity": row.get::<_, f64>(7)?
+            }))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Delete all chunks for a document (for re-indexing)
+    pub fn delete_chunks_for_doc(&self, doc_id: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM document_chunks WHERE doc_id = ?1",
+            params![doc_id],
+        )?;
+        Ok(())
+    }
+
+    // ============================
+    // Security: Audit Log Methods
+    // ============================
+
+    pub fn log_audit(&self, user_id: &str, action: &str, resource: &str, status: &str, details: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO audit_log (user_id, action, resource, status, details) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![user_id, action, resource, status, details],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_audit_logs(&self, limit: u32) -> Result<Vec<serde_json::Value>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, timestamp, user_id, action, resource, status, details
+             FROM audit_log ORDER BY timestamp DESC LIMIT ?1"
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, i64>(0)?,
+                "timestamp": row.get::<_, String>(1)?,
+                "user_id": row.get::<_, String>(2)?,
+                "action": row.get::<_, String>(3)?,
+                "resource": row.get::<_, String>(4).unwrap_or_default(),
+                "status": row.get::<_, String>(5)?,
+                "details": row.get::<_, String>(6).unwrap_or_default()
+            }))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    // ============================
+    // Performance: Query Log Methods
+    // ============================
+
+    pub fn log_query(&self, prompt: &str, chunks_retrieved: i64, response_time_ms: i64, sources: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO query_log (prompt, chunks_retrieved, response_time_ms, sources) VALUES (?1, ?2, ?3, ?4)",
+            params![prompt, chunks_retrieved, response_time_ms, sources],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_query_history(&self, limit: u32) -> Result<Vec<serde_json::Value>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, timestamp, prompt, chunks_retrieved, response_time_ms, sources
+             FROM query_log ORDER BY timestamp DESC LIMIT ?1"
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, i64>(0)?,
+                "timestamp": row.get::<_, String>(1)?,
+                "prompt": row.get::<_, String>(2)?,
+                "chunks_retrieved": row.get::<_, i64>(3)?,
+                "response_time_ms": row.get::<_, i64>(4)?,
+                "sources": row.get::<_, String>(5).unwrap_or_default()
+            }))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
     }
 
 }

@@ -12,6 +12,7 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://alcdn.msauth.net/browser/2.30.0/js/msal-browser.js"></script>
     <style>
         :root {
             --bg: #0B0B0D;
@@ -746,6 +747,141 @@
             overflow-x: auto;
             margin-bottom: 15px;
         }
+
+        /* === ASK NEXUS PAGE === */
+        .nexus-knowledge-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        .knowledge-stat {
+            background: rgba(255,106,0,0.06);
+            border: 1px solid rgba(255,106,0,0.15);
+            padding: 14px 22px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--text-dim);
+            backdrop-filter: blur(10px);
+        }
+        .knowledge-stat i { color: var(--accent); font-size: 16px; }
+        .knowledge-stat strong { color: white; font-size: 18px; margin-right: 4px; }
+
+        .nexus-templates {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            overflow-x: auto;
+            padding-bottom: 5px;
+            scrollbar-width: none;
+        }
+        .nexus-templates::-webkit-scrollbar { display: none; }
+        .template-chip {
+            padding: 10px 18px;
+            border-radius: 99px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text-dim);
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: var(--transition);
+            font-family: var(--font-sans);
+        }
+        .template-chip:hover {
+            background: rgba(255,106,0,0.1);
+            border-color: var(--accent);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(255,106,0,0.1);
+        }
+        .template-chip i { margin-right: 6px; color: var(--accent); }
+
+        .nexus-chat-area {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 30px;
+            min-height: 500px;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(20px);
+        }
+        .nexus-chat-display {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+            padding: 10px 0 20px;
+            max-height: 450px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+        .nexus-chat-display:empty::before {
+            content: "Ask anything about your enterprise data...";
+            color: var(--text-dim);
+            font-size: 16px;
+            text-align: center;
+            margin: auto;
+            opacity: 0.5;
+        }
+        .nexus-chat-input-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            align-items: center;
+        }
+        .nexus-chat-input-row input {
+            flex: 1;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border);
+            padding: 16px 22px;
+            border-radius: 16px;
+            color: white;
+            font-size: 16px;
+            font-family: var(--font-sans);
+            outline: none;
+            transition: var(--transition);
+        }
+        .nexus-chat-input-row input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 30px rgba(255,106,0,0.1);
+            background: rgba(255,255,255,0.05);
+        }
+        .nexus-send-btn {
+            width: 52px; height: 52px;
+            background: var(--accent);
+            border: none;
+            border-radius: 16px;
+            color: black;
+            font-size: 18px;
+            cursor: pointer;
+            transition: var(--transition);
+            display: grid;
+            place-items: center;
+            flex-shrink: 0;
+        }
+        .nexus-send-btn:hover {
+            transform: scale(1.08);
+            box-shadow: 0 0 25px var(--accent-glow);
+        }
+        .nexus-source-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10px;
+            color: var(--accent);
+            background: rgba(255,106,0,0.08);
+            border: 1px solid rgba(255,106,0,0.15);
+            padding: 4px 10px;
+            border-radius: 99px;
+            margin-top: 10px;
+            margin-right: 5px;
+        }
     </style>
 </head>
 
@@ -765,6 +901,10 @@
         <a href="#preview" class="nav-link" onclick="closeSidebar()">
             <i class="fa-solid fa-eye"></i>
             <span class="nav-label">Analysis</span>
+        </a>
+        <a href="#ask-nexus" class="nav-link" onclick="closeSidebar()">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span class="nav-label">Ask Nexus</span>
         </a>
         <a href="#connectors" class="nav-link" onclick="closeSidebar()">
             <i class="fa-solid fa-link"></i>
@@ -907,6 +1047,41 @@
                     <div id="preview-body" style="font-size: 15px; line-height: 1.8; color: #BBB;">
                         Select a document from the surface to generate high-level intelligence and metric extraction.
                     </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Ask Nexus: Full-Context AI Q&A -->
+        <section id="ask-nexus">
+            <div style="margin-bottom: 40px;">
+                <h4 style="color: var(--accent); letter-spacing: 0.2em; font-size: 14px; margin-bottom: 10px;">INTELLIGENCE ENGINE</h4>
+                <h3 style="font-family: var(--font-accent); font-size: 40px;">Ask Nexus</h3>
+                <p style="color: var(--text-dim); margin-top: 10px; font-size: 15px;">Query your entire enterprise knowledge base. Nexus reads all discovered data to answer.</p>
+            </div>
+
+            <div class="nexus-knowledge-bar" id="nexus-knowledge-bar">
+                <div class="knowledge-stat"><i class="fa-solid fa-database"></i> <strong id="nexus-total-docs">0</strong> Documents</div>
+                <div class="knowledge-stat"><i class="fa-brands fa-microsoft"></i> <strong id="nexus-sp-count">0</strong> SharePoint</div>
+                <div class="knowledge-stat"><i class="fa-solid fa-table"></i> <strong id="nexus-dv-count">0</strong> Dataverse</div>
+                <div class="knowledge-stat"><i class="fa-solid fa-puzzle-piece"></i> <strong id="nexus-chunk-count">0</strong> Chunks Indexed</div>
+                <div class="knowledge-stat" id="nexus-rag-badge"><i class="fa-solid fa-brain"></i> <span id="nexus-rag-mode">Initializing...</span></div>
+                <div class="knowledge-stat"><i class="fa-solid fa-shield-halved"></i> RBAC Secured</div>
+            </div>
+
+            <div class="nexus-templates">
+                <button class="template-chip" onclick="applyNexusTemplate('Summarize all available enterprise data in a structured executive briefing.')"><i class="fa-solid fa-file-lines"></i> Summarize All</button>
+                <button class="template-chip" onclick="applyNexusTemplate('Identify any risks, issues, or anomalies across all documents and records.')"><i class="fa-solid fa-triangle-exclamation"></i> Find Risks</button>
+                <button class="template-chip" onclick="applyNexusTemplate('Extract all key dates, deadlines, and milestones from the data.')"><i class="fa-solid fa-calendar"></i> Extract Dates</button>
+                <button class="template-chip" onclick="applyNexusTemplate('List all action items and recommendations found across the knowledge base.')"><i class="fa-solid fa-list-check"></i> Action Items</button>
+                <button class="template-chip" onclick="applyNexusTemplate('Compare and contrast the SharePoint documents with Dataverse records. What overlaps or gaps exist?')"><i class="fa-solid fa-code-compare"></i> Compare Sources</button>
+                <button class="template-chip" onclick="applyNexusTemplate('Who are the key people, teams, or departments mentioned across all data?')"><i class="fa-solid fa-users"></i> Key People</button>
+            </div>
+
+            <div class="nexus-chat-area">
+                <div class="nexus-chat-display" id="nexus-chat-display"></div>
+                <div class="nexus-chat-input-row">
+                    <input type="text" id="nexus-prompt-input" placeholder="Ask anything about your enterprise data..." onkeydown="if(event.key==='Enter') sendNexusPrompt()">
+                    <button class="nexus-send-btn" onclick="sendNexusPrompt()"><i class="fa-solid fa-paper-plane"></i></button>
                 </div>
             </div>
         </section>
@@ -1360,26 +1535,75 @@
         // Initialize explorer on load
         // loadExplorerData(); // Removed redundant call
 
+        let msalInstance = null;
+        async function initMsal() {
+            if (msalInstance) return msalInstance;
+            try {
+                let config;
+                if (window.__TAURI__ && window.__TAURI__.invoke) {
+                    config = await window.__TAURI__.invoke('get_auth_config');
+                    localStorage.setItem('nexus_auth_config', JSON.stringify(config));
+                } else {
+                    const cached = localStorage.getItem('nexus_auth_config');
+                    if (cached) config = JSON.parse(cached);
+                    else throw new Error("No config in localStorage and no Tauri invoke available.");
+                }
+
+                const msalConfig = {
+                    auth: {
+                        clientId: config.client_id,
+                        authority: `https://login.microsoftonline.com/${config.tenant_id}`,
+                        redirectUri: config.redirect_uri || window.location.href
+                    }
+                };
+                msalInstance = new msal.PublicClientApplication(msalConfig);
+                await msalInstance.initialize();
+                return msalInstance;
+            } catch (err) {
+                console.error("Failed to init MSAL:", err);
+                return null;
+            }
+        }
+
         async function onMicrosoftLogin() {
             const btn = document.querySelector('.ms-login-btn');
             const originalText = btn.innerHTML;
             btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Authenticating...`;
             btn.disabled = true;
 
-            // Simulate Auth Transition
-            setTimeout(() => {
+            try {
+                const msalApp = await initMsal();
+                if (!msalApp) throw new Error("MSAL initialization failed. Please check .env configuration.");
+
+                const loginRequest = {
+                    scopes: ["User.Read"]
+                };
+
+                const loginResponse = await msalInstance.loginPopup(loginRequest);
+                
+                console.log("Identity established. Welcome, " + loginResponse.account.name);
+                
                 document.body.classList.remove('not-logged-in');
-                // Trigger celebratory pulse on hero title
                 const title = document.querySelector('.hero-text h1');
                 title.style.animation = 'glow-pulse 1s ease-out';
-
-                console.log("Identity established. Nexus unlocked.");
-            }, 1500);
+                
+                // Update identity verified status in UI
+                const statusDivs = document.querySelectorAll('.trust-layer .badge-trust');
+                if (statusDivs.length > 0) {
+                    statusDivs[0].innerHTML = `<i class="fa-solid fa-shield-halved"></i> Verified: ${loginResponse.account.name}`;
+                }
+            } catch (err) {
+                console.error("Microsoft Login Error:", err);
+                alert("Authentication failed: " + err.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
         }
 
         // Initialize state
-        window.addEventListener('load', () => {
+        window.addEventListener('load', async () => {
             // Ensure section-not-hero are locked
+            await initMsal();
             loadExplorerData();
         });
 
@@ -1398,6 +1622,175 @@
         // Forced initialization for Demo Mode
         console.log("Nexus Initialization: Checking for backend handshake...");
         loadExplorerData().then(() => console.log("Nexus Explorer: Initialized with Context."));
+
+        // === ASK NEXUS: Full-Context AI Q&A ===
+        function applyNexusTemplate(text) {
+            const input = document.getElementById('nexus-prompt-input');
+            input.value = text;
+            input.focus();
+        }
+
+        async function updateNexusKnowledgeStats() {
+            // Try backend first
+            if (window.__TAURI__) {
+                try {
+                    const stats = await invoke('get_knowledge_stats');
+                    document.getElementById('nexus-total-docs').textContent = stats.total_documents;
+                    document.getElementById('nexus-sp-count').textContent = stats.sharepoint_count;
+                    document.getElementById('nexus-dv-count').textContent = stats.dataverse_count;
+                    document.getElementById('nexus-chunk-count').textContent = stats.total_chunks;
+                    document.getElementById('nexus-rag-mode').textContent = stats.rag_enabled ? 'RAG Active' : 'Context Mode';
+                    const badge = document.getElementById('nexus-rag-badge');
+                    if (stats.rag_enabled) {
+                        badge.style.borderColor = 'rgba(50,215,75,0.3)';
+                        badge.style.background = 'rgba(50,215,75,0.06)';
+                    }
+                    return;
+                } catch (e) { console.warn('Stats fallback:', e); }
+            }
+            // Demo mode fallback
+            const items = window._currentExplorerItems || MOCK_EXPLORER_DATA;
+            document.getElementById('nexus-total-docs').textContent = items.length;
+            document.getElementById('nexus-sp-count').textContent = items.filter(i => i.source_type === 'SharePoint').length;
+            document.getElementById('nexus-dv-count').textContent = items.filter(i => i.source_type === 'Dataverse').length;
+            document.getElementById('nexus-chunk-count').textContent = '0';
+            document.getElementById('nexus-rag-mode').textContent = 'Demo Mode';
+        }
+
+        async function sendNexusPrompt() {
+            const input = document.getElementById('nexus-prompt-input');
+            const chatDisplay = document.getElementById('nexus-chat-display');
+            const prompt = input.value.trim();
+            if (!prompt) return;
+
+            // Gather filters if they exist (can be hooked up to UI checkboxes later)
+            const sourceFilter = window._nexusSourceFilter || null;
+            const categoryFilter = window._nexusCategoryFilter || null;
+
+            // Add user bubble
+            const userDiv = document.createElement('div');
+            userDiv.className = 'chat-bubble user';
+            userDiv.textContent = prompt;
+            chatDisplay.appendChild(userDiv);
+            input.value = '';
+
+            // Add AI placeholder
+            const aiDiv = document.createElement('div');
+            aiDiv.className = 'chat-bubble ai nexus-ai-bubble';
+            aiDiv.innerHTML = `<div class="typing-indicator"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
+            chatDisplay.appendChild(aiDiv);
+            chatDisplay.scrollTop = chatDisplay.scrollHeight;
+
+            if (!window.__TAURI__) {
+                aiDiv.innerHTML = `<span style="color: #FF453A">Tauri API unavailable. Please run the desktop application to use the RAG pipeline.</span>`;
+                return;
+            }
+
+            chatStreams.set('nexus-chat', '');
+            try {
+                const response = await invoke('ask_nexus', { 
+                    prompt, 
+                    sourceFilter: sourceFilter, 
+                    categoryFilter: categoryFilter 
+                });
+                
+                aiDiv.classList.add('ai-content');
+                aiDiv.innerHTML = '';
+
+                // Render Retrieved Context Accordion if chunks exist
+                if (response.retrieved_chunks && response.retrieved_chunks.length > 0) {
+                    const accordion = document.createElement('details');
+                    accordion.style.marginBottom = '15px';
+                    accordion.style.padding = '10px';
+                    accordion.style.background = 'rgba(255, 255, 255, 0.03)';
+                    accordion.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+                    accordion.style.borderRadius = '8px';
+                    
+                    const summary = document.createElement('summary');
+                    summary.style.cursor = 'pointer';
+                    summary.style.color = 'var(--text-dim)';
+                    summary.style.fontWeight = '500';
+                    summary.innerHTML = `<i class="fa-solid fa-layer-group"></i> View Retrieved Context (${response.retrieved_chunks.length} Chunks)`;
+                    accordion.appendChild(summary);
+
+                    const chunkContainer = document.createElement('div');
+                    chunkContainer.style.marginTop = '10px';
+                    chunkContainer.style.maxHeight = '200px';
+                    chunkContainer.style.overflowY = 'auto';
+                    chunkContainer.style.fontSize = '12px';
+                    chunkContainer.style.color = 'var(--text-dim)';
+
+                    response.retrieved_chunks.forEach((chunk, i) => {
+                        const chunkDiv = document.createElement('div');
+                        chunkDiv.style.marginBottom = '8px';
+                        chunkDiv.style.paddingBottom = '8px';
+                        chunkDiv.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        chunkDiv.innerHTML = `<strong style="color:var(--accent)">[Chunk ${i + 1}] ${chunk.doc_title}</strong> (${Math.round(chunk.similarity * 100)}% match)<br/>${chunk.content.substring(0, 150)}...`;
+                        chunkContainer.appendChild(chunkDiv);
+                    });
+
+                    accordion.appendChild(chunkContainer);
+                    aiDiv.appendChild(accordion);
+                }
+
+                const replyDiv = document.createElement('div');
+                replyDiv.innerHTML = marked.parse(response.reply);
+                aiDiv.appendChild(replyDiv);
+
+                // Add source citation tags
+                const tagRow = document.createElement('div');
+                tagRow.style.marginTop = '10px';
+                tagRow.style.display = 'flex';
+                tagRow.style.flexWrap = 'wrap';
+                tagRow.style.gap = '5px';
+                tagRow.style.alignItems = 'center';
+
+                if (response.sources && response.sources.length > 0) {
+                    response.sources.forEach(src => {
+                        tagRow.innerHTML += `<span class="nexus-source-tag"><i class="fa-solid fa-file"></i> ${src}</span>`;
+                    });
+                }
+                
+                // RAG mode + timing badge
+                const modeBadge = response.rag_mode ? '🧠 Strict RAG' : '📄 Fallback';
+                tagRow.innerHTML += `<span class="nexus-source-tag" style="background:rgba(50,215,75,0.08);color:#32D74B;border-color:rgba(50,215,75,0.15)"><i class="fa-solid fa-clock"></i> ${response.query_time_ms}ms · ${modeBadge}</span>`;
+                aiDiv.appendChild(tagRow);
+            } catch (err) {
+                aiDiv.innerHTML = `<span style="color: #FF453A">Error: ${err}</span>`;
+            }
+            chatDisplay.scrollTop = chatDisplay.scrollHeight;
+        }
+
+
+        // Update knowledge stats whenever explorer data loads
+        const _origRenderExplorer = renderExplorer;
+        renderExplorer = function(items) {
+            _origRenderExplorer(items);
+            updateNexusKnowledgeStats();
+        };
+
+        // Streaming handler for nexus chat
+        if (listen) {
+            listen('nexus-chat-chunk', (event) => {
+                const chatDisplay = document.getElementById('nexus-chat-display');
+                const lastAI = chatDisplay.querySelector('.nexus-ai-bubble:last-child');
+                if (lastAI) {
+                    const streamId = 'nexus-chat';
+                    let currentText = chatStreams.get(streamId) || '';
+                    if (lastAI.querySelector('.typing-indicator')) {
+                        lastAI.innerHTML = '';
+                        lastAI.classList.add('ai-content');
+                    }
+                    currentText += event.payload;
+                    chatStreams.set(streamId, currentText);
+                    lastAI.innerHTML = marked.parse(currentText);
+                    chatDisplay.scrollTop = chatDisplay.scrollHeight;
+                }
+            });
+        }
+
+        // Init knowledge stats
+        updateNexusKnowledgeStats();
     </script>
 </body>
 

@@ -1,6 +1,6 @@
 # Business Requirements Document: Nexus Server
 
-**Version**: 1.1.0  
+**Version**: 1.2.0  
 **Status**: Approved / In Implementation  
 **Project Lead**: Antigravity (AI Architect)
 
@@ -110,7 +110,9 @@ graph TD
 - **Aesthetics**:
     - **Color Palette**: Cyberpunk-influenced "Gold & Black" (Accents: `#FF6A00`, Background: `#0B0B0D`).
     - **UI Standard**: Heavy use of backdrop blurs (Glassmorphism) and rounded corners (24px).
-- **Security**: 
+- **Security & Permissions**: 
+    - **Permission Control Layer**: Strict enforcement of `ReadOnly` versus `ReadWrite` modes globally managed via `.env` (`PERMISSIONS_MODE`), ensuring default safety.
+    - **MCP Tool Security**: All operations requested via the Model Context Protocol (MCP) and internal commands (e.g., file uploads) are evaluated against the active permission layer, effectively preventing unintended enterprise system modifications.
     - Local data encryption at rest (AES-256 standard goal).
     - API keys managed via local `.env` configuration.
 
